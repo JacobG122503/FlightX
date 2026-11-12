@@ -6,22 +6,49 @@ export function MapControls() {
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
 
-  const locate = () => {
-    if (!map || !navigator.geolocation) return;
+  const notify = (msg: string) => {
+    setLocateError(msg);
+    window.setTimeout(() => setLocateError(null), 4000);
+  };
+
+  /** System location if the app is allowed it (usually not inside Electron), else approximate. */
+  const systemLocation = () =>
+    new Promise<{ lat: number; lon: number } | null>((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      const timer = window.setTimeout(() => resolve(null), 4000);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          window.clearTimeout(timer);
+          resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        },
+        () => {
+          window.clearTimeout(timer);
+          resolve(null);
+        },
+        { enableHighAccuracy: false, timeout: 4000, maximumAge: 600_000 },
+      );
+    });
+
+  const locate = async () => {
+    if (!map || locating) return;
     setLocating(true);
     setLocateError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 9 });
-      },
-      (err) => {
-        setLocating(false);
-        setLocateError(err.code === err.PERMISSION_DENIED ? 'Location permission denied' : 'Couldn’t get your location');
-        window.setTimeout(() => setLocateError(null), 4000);
-      },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 },
-    );
+    try {
+      const exact = await systemLocation();
+      if (exact) {
+        map.flyTo({ center: [exact.lon, exact.lat], zoom: 9 });
+        return;
+      }
+      const res = await fetch('/api/locate');
+      if (!res.ok) throw new Error();
+      const approx = (await res.json()) as { lat: number; lon: number; city: string | null };
+      map.flyTo({ center: [approx.lon, approx.lat], zoom: 8 });
+      notify(`Approximate location${approx.city ? ` (${approx.city})` : ''} from your internet connection`);
+    } catch {
+      notify('Couldn’t get your location');
+    } finally {
+      setLocating(false);
+    }
   };
 
   return (

@@ -42,8 +42,8 @@ export function liveStatus(list: FlightListResponse | null, error: string | null
   if (list.feeds.includes('sim')) {
     return {
       kind: 'sim',
-      label: 'SIMULATION',
-      detail: 'real-time clock',
+      label: '',
+      detail: null,
       hint: null,
       tooltip: 'Simulated flights moving in real time. They keep flying while FlightX is closed.',
     };
@@ -83,7 +83,7 @@ export function flightLiveStatus(state: FlightState | null, now: number): LiveSt
   const feed = FEED_LABEL[state.feed] ?? state.feed;
   const name = state.callsign ?? state.reg ?? state.id.toUpperCase();
   if (state.feed === 'sim') {
-    return { kind: 'sim', label: 'SIMULATION', detail: name, hint: null, tooltip: `${name}: simulated flight, moving in real time.` };
+    return { kind: 'sim', label: '', detail: name, hint: null, tooltip: `${name}: simulated flight, moving in real time.` };
   }
   if (REALTIME_FEEDS.has(state.feed) && age < LIVE_MAX_AGE_MS) {
     return { kind: 'live', label: 'LIVE', detail: `${name} · ${feed}`, hint: null, tooltip: `${name}: real-time position from ${feed}.` };

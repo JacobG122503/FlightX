@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Map, { AttributionControl, MapProvider, useMap, type MapRef } from 'react-map-gl/maplibre';
+import Map, { MapProvider, useMap, type MapRef } from 'react-map-gl/maplibre';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import { FlightLayers } from './components/FlightLayers';
 import { FlightPanel } from './components/FlightPanel';
@@ -60,6 +60,7 @@ function savePref(key: string, value: string) {
 }
 
 const PANEL_W = 372;
+
 const SIDEBAR_W = 360;
 
 /** MapLibre can report longitudes beyond ±180 when world copies are visible. */
@@ -264,7 +265,6 @@ function FlightApp() {
           // Quarter-step zoom is enough for icon sizing and avoids re-rendering on every frame.
           onZoom={(e) => setZoom(Math.round(e.viewState.zoom * 4) / 4)}
         >
-          <AttributionControl compact position="bottom-right" />
           <FlightLayers
             flights={flights}
             selectedId={selectedId}
@@ -331,21 +331,6 @@ function FlightApp() {
 
       <div className="bottom-left">
         <Legend />
-        <div className="attribution">
-          Flight data{' '}
-          <a href="https://opensky-network.org" target="_blank" rel="noreferrer">OpenSky Network</a>,{' '}
-          <a href="https://adsb.fi" target="_blank" rel="noreferrer">adsb.fi</a>,{' '}
-          <a href="https://adsb.lol" target="_blank" rel="noreferrer">adsb.lol</a> (ODbL) · Routes{' '}
-          <a href="https://www.adsbdb.com" target="_blank" rel="noreferrer">adsbdb</a>
-          {simMode && (
-            <>
-              {' '}· Sim data{' '}
-              <a href="https://ourairports.com/data/" target="_blank" rel="noreferrer">OurAirports</a>,{' '}
-              <a href="https://github.com/vradarserver/standing-data" target="_blank" rel="noreferrer">Virtual Radar Server</a>,{' '}
-              <a href="https://openflights.org/data" target="_blank" rel="noreferrer">OpenFlights</a> (time zones, ODbL)
-            </>
-          )}
-        </div>
       </div>
 
       <MapControls />

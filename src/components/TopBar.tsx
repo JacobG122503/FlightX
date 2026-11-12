@@ -44,6 +44,7 @@ export function TopBar({ source, list, count, error, nextAt, focus, flights, onP
       </div>
 
       <div className={`topbar__status glass is-${status.kind}`} title={status.tooltip} role="status" aria-live="polite">
+        {status.kind !== 'sim' && (
         <span className={`status-badge is-${status.kind}`}>
           {status.kind === 'live' && <span className="live-dot" />}
           {status.kind === 'delayed' && (
@@ -52,9 +53,9 @@ export function TopBar({ source, list, count, error, nextAt, focus, flights, onP
             </svg>
           )}
           {status.kind === 'offline' && <span className="offline-dot" />}
-          {status.kind === 'sim' && <span className="sim-dot" />}
           {status.label}
         </span>
+        )}
         {list && !error && !focused && (
           <span className="status-count">
             <strong>{fmtInt(count)}</strong> {source === 'sim' ? (count === 1 ? 'flight' : 'flights') : 'aircraft'}

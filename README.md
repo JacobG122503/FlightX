@@ -45,7 +45,7 @@ Without VS Code: `npm run dev` does the same thing.
 | Route, airline, registry| adsbdb (routes are checked against the plane's position)               |
 | Photos                  | Planespotters.net, airport-data.com (photographer credited)            |
 
-All are free for personal, non-commercial use and are credited in the app.
+All are free for personal, non-commercial use (FlightX is a private app, so credits live here rather than on screen).
 
 FlightX is careful with these volunteer-run services: one wide request is reused while you
 pan, the selected plane reuses that data, and if a service answers "slow down" (HTTP 429)

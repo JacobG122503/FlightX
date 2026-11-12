@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { config } from './config';
 import { parseBounds } from './lib/bounds';
-import { errorMessage } from './lib/http';
+import { errorMessage, fetchJson } from './lib/http';
 import { getSource, simSource } from './sources';
 import type { FlightSource } from './sources/types';
 import type { SearchResponse } from '../shared/types';
@@ -32,6 +32,34 @@ export function createApp(staticDir: string | null) {
   const app = express();
   app.disable('x-powered-by');
   app.use(compression());
+
+  // Approximate location (city-level) from this computer's internet connection, for the
+  // "flights near me" button when the system location isn't available to the app.
+  let located: { at: number; value: { lat: number; lon: number; city: string | null } } | null = null;
+  app.get('/api/locate', async (_req, res) => {
+    if (located && Date.now() - located.at < 10 * 60_000) {
+      res.json(located.value);
+      return;
+    }
+    const providers: [string, (d: Record<string, unknown>) => { lat: number; lon: number; city: string | null }][] = [
+      ['https://get.geojs.io/v1/ip/geo.json', (d) => ({ lat: Number(d.latitude), lon: Number(d.longitude), city: (d.city as string) || null })],
+      ['https://ipwho.is/', (d) => ({ lat: Number(d.latitude), lon: Number(d.longitude), city: (d.city as string) || null })],
+    ];
+    for (const [url, parse] of providers) {
+      try {
+        const { data } = await fetchJson<Record<string, unknown>>(url, { timeoutMs: 6000 });
+        const value = parse(data);
+        if (Number.isFinite(value.lat) && Number.isFinite(value.lon)) {
+          located = { at: Date.now(), value };
+          res.json(value);
+          return;
+        }
+      } catch {
+        /* try the next provider */
+      }
+    }
+    res.status(503).json({ error: 'Couldn’t determine your location.' });
+  });
 
   app.get('/api/health', (req, res) => {
     const src = source(req, res);

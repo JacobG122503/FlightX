@@ -869,6 +869,37 @@ pre,
   padding: 9px 12px 8px;
   width: 260px;
 }
+.legend__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.legend__head .legend__title {
+  margin-bottom: 0;
+}
+.legend__hide {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  margin: -4px -6px -4px 0;
+}
+.legend__hide:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.legend__hide svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
 .legend__title {
   font-size: 10.5px;
   font-weight: 700;
@@ -934,35 +965,12 @@ pre,
   text-decoration-color: rgba(141, 153, 171, 0.4);
 }
 
-/* MapLibre attribution (imagery/map credits), restyled for the dark UI. */
-.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib {
-  margin: 0 var(--gutter) var(--gutter) 0;
-  background: var(--glass);
-  color: var(--muted);
-  border: 1px solid var(--border);
-  font-size: 10.5px;
-}
-.maplibregl-ctrl-attrib a {
-  color: var(--muted);
-}
-.maplibregl-ctrl-attrib.maplibregl-compact-show {
-  padding: 3px 28px 3px 8px;
-  border-radius: 12px;
-}
-.maplibregl-ctrl-attrib-button {
-  filter: invert(0.85);
-  background-color: transparent;
-}
-.maplibregl-ctrl-attrib.maplibregl-compact {
-  min-height: 24px;
-}
-
 /* ── Map controls ───────────────────────────────────────────────────────── */
 
 .controls {
   position: absolute;
   right: var(--gutter);
-  bottom: 40px; /* above the map attribution button */
+  bottom: var(--gutter);
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -1034,9 +1042,6 @@ pre,
 .app.mode-sim.has-panel .controls {
   right: calc(var(--panel-w, 372px) + 2 * var(--gutter));
 }
-.app.mode-sim.has-panel .maplibregl-ctrl-bottom-right {
-  right: calc(372px + var(--gutter));
-}
 .app.mode-sim.has-panel .bottom-left {
   left: var(--gutter);
 }
@@ -1101,8 +1106,7 @@ pre,
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-.icon-btn svg,
-.sidebar-tab svg {
+.icon-btn svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -1111,20 +1115,6 @@ pre,
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.sidebar-tab {
-  position: absolute;
-  top: 70px;
-  left: var(--gutter);
-  z-index: 17;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px 8px 8px;
-  font-weight: 600;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
 .sim-section {
   display: flex;
   flex-direction: column;
@@ -1999,6 +1989,44 @@ pre,
 .pax-editor__actions {
   display: flex;
   gap: 8px;
+}
+
+/* ── Edge tabs: collapsed panels as small arrows on the window's left edge ── */
+
+.edge-tab {
+  position: absolute;
+  left: 0;
+  z-index: 17;
+  width: 22px;
+  height: 52px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  cursor: pointer;
+  transition: width 0.12s ease;
+}
+.edge-tab:hover {
+  width: 28px;
+  background: var(--glass-strong);
+}
+.edge-tab svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.edge-tab--sidebar {
+  top: 82px;
+}
+/* Lives in the bottom-left stack; pull it flush against the window edge. */
+.edge-tab--legend {
+  position: relative;
+  margin-left: calc(-1 * var(--gutter));
 }
 
 @media (prefers-reduced-motion: reduce) {

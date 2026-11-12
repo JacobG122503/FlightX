@@ -118,9 +118,8 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight }
 
   if (!open) {
     return (
-      <button className="sidebar-tab glass" onClick={onToggle} title="Show the simulation panel">
-        <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
-        Simulation
+      <button className="edge-tab edge-tab--sidebar glass" onClick={onToggle} title="Show the simulation panel" aria-label="Show the simulation panel">
+        <svg viewBox="0 0 24 24" aria-hidden><path d="M9 6l6 6-6 6" /></svg>
       </button>
     );
   }
