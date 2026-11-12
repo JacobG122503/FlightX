@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { fmtAltitude } from '../lib/format';
-import { altitudeCss } from '../lib/altitude';
-import type { FlightState, SourceId } from '../../shared/types';
+import { planeColor } from '../lib/icons';
+import type { FlightState } from '../../shared/types';
 
 interface Props {
   flights: FlightState[];
-  source: SourceId;
   onPick: (flight: FlightState) => void;
 }
 
@@ -19,8 +18,8 @@ function matches(f: FlightState, q: string): boolean {
   );
 }
 
-/** Find a flight by callsign, registration or ICAO hex — in view first, then anywhere. */
-export function SearchBox({ flights, source, onPick }: Props) {
+/** Find a flight by flight number, callsign, registration or airport — in view first, then anywhere. */
+export function SearchBox({ flights, onPick }: Props) {
   const [query, setQuery] = useState('');
   const [remote, setRemote] = useState<FlightState[]>([]);
   const [searching, setSearching] = useState(false);
@@ -46,7 +45,7 @@ export function SearchBox({ flights, source, onPick }: Props) {
     const t = window.setTimeout(async () => {
       setSearching(true);
       try {
-        setRemote((await api.search(q, source, ctrl.signal)).results);
+        setRemote((await api.search(q, ctrl.signal)).results);
       } catch {
         /* ignore */
       } finally {
@@ -58,7 +57,7 @@ export function SearchBox({ flights, source, onPick }: Props) {
       window.clearTimeout(t);
       setSearching(false);
     };
-  }, [q, source]);
+  }, [q]);
 
   const results = useMemo(() => {
     const seen = new Set<string>();
@@ -102,7 +101,7 @@ export function SearchBox({ flights, source, onPick }: Props) {
       <input
         ref={inputRef}
         className="search__input"
-        placeholder="Search flight, registration or hex"
+        placeholder="Search flight, registration or airport"
         value={query}
         spellCheck={false}
         autoComplete="off"
@@ -140,14 +139,14 @@ export function SearchBox({ flights, source, onPick }: Props) {
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(f)}
             >
-              <span className="dot" style={{ background: altitudeCss(f.altFt, f.onGround) }} />
+              <span className="dot" style={{ background: planeColor(f) }} />
               <span className="search__callsign">{f.callsign ?? f.reg ?? f.id.toUpperCase()}</span>
-              <span className="search__sub">{[f.typeCode, f.reg, f.country].filter(Boolean).join(' · ')}</span>
+              <span className="search__sub">{[f.typeCode, f.reg].filter(Boolean).join(' · ')}</span>
               <span className="search__alt">{fmtAltitude(f.altFt, f.onGround)}</span>
             </button>
           ))}
           {results.length === 0 && (
-            <div className="search__empty">{searching || q.length < 3 ? 'Searching…' : `No aircraft found for “${q}”`}</div>
+            <div className="search__empty">{searching || q.length < 3 ? 'Searching…' : `No flights found for “${q}”`}</div>
           )}
         </div>
       )}

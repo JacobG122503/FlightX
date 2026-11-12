@@ -94,7 +94,16 @@ export interface SimTripSummary {
   legs: { flightId: string; callsign: string; flightNumber: string; from: string; to: string; departAt: number; arriveAt: number; aircraftType: string }[];
   /** 0–1 across the whole trip. */
   progress: number;
+  /** When the whole trip ends: the last flight parked at its gate. */
   finalArriveAt: number;
+}
+
+/** A flight created from a chosen length of time. */
+export interface TimerResponse {
+  trip: SimTripSummary;
+  targetMin: number;
+  /** Pushback to parked at the final gate, after runway queues. */
+  actualMin: number;
 }
 
 export interface SeatCabin {

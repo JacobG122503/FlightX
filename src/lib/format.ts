@@ -33,24 +33,8 @@ export const fmtKm = (km: number) => `${fmtInt(km)} km`;
 
 export function fmtDuration(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes < 0) return '—';
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
+  const total = Math.round(minutes);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
   return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
-
-export function fmtAgo(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min ago`;
-  return `${Math.round(m / 60)} h ago`;
-}
-
-export const FEED_LABEL: Record<string, string> = {
-  opensky: 'OpenSky Network',
-  adsbfi: 'adsb.fi',
-  adsblol: 'adsb.lol',
-  sim: 'Simulator',
-  observed: 'observed',
-};

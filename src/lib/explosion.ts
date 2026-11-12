@@ -6,8 +6,7 @@
 import { IconLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import type { AircraftKind } from '../../shared/types';
-import { aircraftIcon, PLANE_SIZE } from './icons';
-import type { RGBA } from './altitude';
+import { aircraftIcon, PLANE_SIZE, SIM_COLORS, type RGBA } from './icons';
 
 export const BOOM_MS = 2800;
 
@@ -149,7 +148,7 @@ export function explosionLayers(booms: Boom[], now: number, zoom: number): Layer
     new IconLayer<(typeof planes)[number]>({
       id: 'boom-plane',
       data: planes,
-      getIcon: (d) => aircraftIcon(d.boom.kind, d.boom.altFt, false),
+      getIcon: (d) => aircraftIcon(d.boom.kind, (d.boom.altFt ?? 0) > 0 ? SIM_COLORS.random : SIM_COLORS.ground, false),
       getPosition: (d) => d.position,
       getSize: (d) => d.size,
       getAngle: (d) => d.angle,

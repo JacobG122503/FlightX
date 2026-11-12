@@ -1,6 +1,6 @@
 /**
- * Standalone API server — handy for poking at the API without the desktop app:
- *   npm run server   →   curl "localhost:8787/api/flights?bbox=40,-75,41,-73"
+ * Standalone API server — handy for poking at the simulator without the desktop app:
+ *   npm run server   →   curl "localhost:8787/api/sim/status"
  * The desktop app (electron/main.ts) starts this same server in-process.
  */
 import 'dotenv/config';

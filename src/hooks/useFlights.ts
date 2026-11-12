@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, serverNow } from '../api';
-import type { Bounds, FlightListResponse, SourceId } from '../../shared/types';
+import type { Bounds, FlightListResponse } from '../../shared/types';
 
 export interface MapView {
   bounds: Bounds;
@@ -11,19 +11,13 @@ const MIN_POLL_MS = 3_000;
 const MAX_POLL_MS = 600_000;
 const ERROR_RETRY_MS = 10_000;
 
-/** Fetches aircraft for the current viewport and keeps polling at the rate the server suggests. */
-export function useFlights(view: MapView | null, source: SourceId, active: boolean) {
+/** Fetches simulated aircraft for the current viewport and keeps polling at the rate the server suggests. */
+export function useFlights(view: MapView | null, active: boolean) {
   const [data, setData] = useState<FlightListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   /** Server-clock time of the next scheduled refresh (for "next update in …"). */
   const [nextAt, setNextAt] = useState<number | null>(null);
-
-  // Switching between real and simulated worlds: drop the other world's planes right away.
-  useEffect(() => {
-    setData(null);
-    setError(null);
-  }, [source]);
 
   useEffect(() => {
     if (!view || !active) return;
@@ -33,7 +27,7 @@ export function useFlights(view: MapView | null, source: SourceId, active: boole
     const run = async () => {
       setLoading(true);
       try {
-        const res = await api.flights(view.bounds, source, ctrl.signal);
+        const res = await api.flights(view.bounds, ctrl.signal);
         const delay = Math.min(MAX_POLL_MS, Math.max(MIN_POLL_MS, res.refreshInMs));
         setData(res);
         setError(null);
@@ -55,7 +49,7 @@ export function useFlights(view: MapView | null, source: SourceId, active: boole
       ctrl.abort();
       window.clearTimeout(timer);
     };
-  }, [view, source, active]);
+  }, [view, active]);
 
   return { data, error, loading, nextAt };
 }

@@ -35,8 +35,9 @@ export function localStamp(ms: number): string {
 }
 
 export function fmtMinutes(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
+  const total = Math.round(min);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
 
@@ -52,3 +53,11 @@ export function localStampTz(ms: number): string {
 
 /** Hover text: the same moment in the airport's own time zone. */
 export const airportTimeTip = (ms: number, tz: string | null, where: string) => `${timeTz(ms, tz)} local time in ${where}`;
+
+/** A length of time for labels: "3h", "1h 30m", "45m". */
+export function fmtTimer(min: number): string {
+  const total = Math.round(min);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`;
+}

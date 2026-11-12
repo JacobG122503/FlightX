@@ -1,14 +1,7 @@
-import type { CrashResponse, CustomPassenger, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimStatusResponse, SimTripSummary, TripView } from '../shared/sim';
-import type {
-  Bounds,
-  FlightDetailResponse,
-  FlightListResponse,
-  SearchResponse,
-  SourceId,
-  TrackResponse,
-} from '../shared/types';
+import type { CrashResponse, CustomPassenger, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../shared/sim';
+import type { Bounds, FlightDetailResponse, FlightListResponse, SearchResponse, TrackResponse } from '../shared/types';
 
-/** Difference between the server's clock and ours, so dead reckoning uses server time. */
+/** Difference between the server's clock and ours, so positions use simulator time. */
 let clockOffsetMs = 0;
 export const serverNow = () => Date.now() + clockOffsetMs;
 
@@ -34,20 +27,14 @@ const post = <T>(path: string, body: unknown) =>
   get<T>(path, undefined, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 export const api = {
-  flights: (bounds: Bounds, source: SourceId, signal?: AbortSignal) =>
+  flights: (bounds: Bounds, signal?: AbortSignal) =>
     get<FlightListResponse>(
-      `/api/flights?${qs({
-        bbox: [bounds.south, bounds.west, bounds.north, bounds.east].map((n) => n.toFixed(4)).join(','),
-        source,
-      })}`,
+      `/api/flights?${qs({ bbox: [bounds.south, bounds.west, bounds.north, bounds.east].map((n) => n.toFixed(4)).join(',') })}`,
       signal,
     ),
-  detail: (id: string, source: SourceId, signal?: AbortSignal) =>
-    get<FlightDetailResponse>(`/api/flights/${encodeURIComponent(id)}?${qs({ source })}`, signal),
-  track: (id: string, source: SourceId, signal?: AbortSignal) =>
-    get<TrackResponse>(`/api/flights/${encodeURIComponent(id)}/track?${qs({ source })}`, signal),
-  search: (q: string, source: SourceId, signal?: AbortSignal) =>
-    get<SearchResponse>(`/api/search?${qs({ q, source })}`, signal),
+  detail: (id: string, signal?: AbortSignal) => get<FlightDetailResponse>(`/api/flights/${encodeURIComponent(id)}`, signal),
+  track: (id: string, signal?: AbortSignal) => get<TrackResponse>(`/api/flights/${encodeURIComponent(id)}/track`, signal),
+  search: (q: string, signal?: AbortSignal) => get<SearchResponse>(`/api/search?${qs({ q })}`, signal),
   sim: {
     plan: (query: string, advanced: boolean, passengers = 1) => post<PlanResponse>('/api/sim/plan', { query, advanced, passengers }),
     send: (query: string) => post<{ plan: PlanResponse; trip: SimTripSummary | null }>('/api/sim/send', { query }),
@@ -57,6 +44,7 @@ export const api = {
     logPassengers: (entryId: string) => get<PassengerManifest>(`/api/sim/log/${encodeURIComponent(entryId)}/passengers`),
     seatMap: (type: string, charter: boolean) => get<SeatMap>(`/api/sim/seatmap/${encodeURIComponent(type)}?charter=${charter ? 1 : 0}`),
     randomPerson: () => get<{ name: string; age: number }>('/api/sim/random-person'),
+    timer: (minutes: number) => post<TimerResponse>('/api/sim/timer', { minutes }),
     spawn: (count: number) => post<{ created: number }>('/api/sim/spawn', { count }),
     status: (view: TripView = 'newest') => get<SimStatusResponse>(`/api/sim/status?view=${view}`),
     missed: () => get<MissedSummary>('/api/sim/missed'),

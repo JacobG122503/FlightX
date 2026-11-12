@@ -5,7 +5,7 @@ import { DeckOverlay } from './DeckOverlay';
 import { HoverCard } from './HoverCard';
 import { useNow } from '../hooks/useNow';
 import { serverNow } from '../api';
-import { buildFlightLayers, buildRoute, buildTrail, LABEL_MAX_COUNT, LABEL_MIN_ZOOM, type ColorMode } from '../lib/layers';
+import { buildFlightLayers, buildRoute, buildTrail, LABEL_MAX_COUNT, LABEL_MIN_ZOOM } from '../lib/layers';
 import { extrapolate } from '../../shared/geo';
 import { BOOM_MS, explosionLayers, onExplode, shakeMap, type Boom } from '../lib/explosion';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
@@ -23,8 +23,6 @@ interface Props {
   follow: boolean;
   /** Show only the selected aircraft. */
   hideOthers: boolean;
-  /** Altitude colours (live) or ground/random/yours colours (simulation). */
-  colorMode: ColorMode;
   onSelect: (id: string | null) => void;
 }
 
@@ -35,7 +33,7 @@ interface Hover {
 }
 
 /** React glue between app state and the deck.gl overlay. Render as a child of <Map>. */
-export function FlightLayers({ flights, selectedId, selectedState, route, trail, zoom, follow, hideOthers, colorMode, onSelect }: Props) {
+export function FlightLayers({ flights, selectedId, selectedState, route, trail, zoom, follow, hideOthers, onSelect }: Props) {
   const map = useMap().current;
   // While following, update every frame so the camera and plane move together smoothly.
   const now = useNow(follow ? 0 : FRAME_MS);
@@ -75,7 +73,7 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
   );
   // Parked aircraft crowd airports, so only airborne traffic gets labels (hover still works).
   const labeled = useMemo(() => others.filter((f) => f.callsign && !f.onGround), [others]);
-  const airports = useMemo<Airport[]>(() => (route?.plausible ? [route.origin, route.destination] : []), [route]);
+  const airports = useMemo<Airport[]>(() => (route ? [route.origin, route.destination] : []), [route]);
   const selectedPos = selectedState ? extrapolate(selectedState, now) : null;
 
   // Follow mode: glide to the plane once, then lock the camera onto it every frame.
@@ -122,13 +120,12 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
         labelsOn: zoom >= LABEL_MIN_ZOOM && flights.length <= LABEL_MAX_COUNT,
         selected: selectedState,
         selectedPos,
-        trail: buildTrail(trail, selectedState, selectedPos, colorMode),
+        trail: buildTrail(trail, selectedState, selectedPos),
         route: buildRoute(route, selectedState, selectedPos, trail.length),
         airports,
         zoom,
         now,
         onHover,
-        colorMode,
         }),
         ...explosionLayers(booms, frame, zoom),
       ],
@@ -136,7 +133,7 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
       pickingRadius: 6,
     }),
     // selectedPos is derived from selectedState + now, both listed.
-    [others, labeled, zoom, flights.length, selectedState, trail, route, airports, now, onHover, onClick, booms, frame, colorMode],
+    [others, labeled, zoom, flights.length, selectedState, trail, route, airports, now, onHover, onClick, booms, frame],
   );
 
   return (

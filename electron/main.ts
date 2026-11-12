@@ -1,7 +1,7 @@
 /**
  * FlightX window (Electron main process), launched by `npm run dev` / ▶ in VS Code.
  *
- * Starts the flight-data API in-process, then opens a window on the UI served
+ * Starts the simulator API in-process, then opens a window on the UI served
  * by the Vite dev server (hot reload). If run without the dev server, it falls
  * back to the built UI in dist/ (after `npm run build`).
  */
@@ -124,7 +124,7 @@ async function createWindow() {
     mainWindow = null;
   });
 
-  // Links (photo credits, data sources) open in the default browser, never inside the app.
+  // Links (e.g. a photo's Wikipedia page) open in the default browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };

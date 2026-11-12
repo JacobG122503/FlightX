@@ -1,12 +1,13 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, serverNow } from '../../api';
-import type { CustomPassenger, ItineraryOption, PlanResponse, SimStatusResponse, SimTripSummary, TripView } from '../../../shared/sim';
+import type { CustomPassenger, ItineraryOption, PlanResponse, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
 import { ItineraryCard } from './ItineraryCard';
 import { PassengerEditor } from '../passengers/PassengerEditor';
 import { PassengerModal } from '../passengers/PassengerModal';
 import { LogFlightModal } from './LogFlightModal';
-import { airportTimeTip, fmtMinutes, localStampTz } from '../../lib/time';
+import { TimerForm } from './TimerForm';
+import { airportTimeTip, fmtMinutes, fmtTimer, localStampTz } from '../../lib/time';
 import { useNow } from '../../hooks/useNow';
 
 interface Props {
@@ -38,6 +39,15 @@ const VIEW_LABEL: Record<TripView, string> = {
 };
 
 const SECTIONS_KEY = 'flightx:sections';
+const CREATE_KEY = 'flightx:create';
+type CreateMode = 'route' | 'timer';
+function loadCreateMode(): CreateMode {
+  try {
+    return localStorage.getItem(CREATE_KEY) === 'timer' ? 'timer' : 'route';
+  } catch {
+    return 'route';
+  }
+}
 function loadSections(): { active: boolean; log: boolean } {
   try {
     return { active: true, log: true, ...JSON.parse(localStorage.getItem(SECTIONS_KEY) ?? '{}') };
@@ -69,6 +79,25 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [sections, setSections] = useState(loadSections);
+  const [createMode, setCreateMode] = useState<CreateMode>(loadCreateMode);
+
+  const switchCreate = (mode: CreateMode) => {
+    setCreateMode(mode);
+    setMessage(null);
+    try {
+      localStorage.setItem(CREATE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /** A flight made from a length of time: sent like any other flight. */
+  const timerSent = ({ trip, targetMin, actualMin }: TimerResponse) => {
+    announce(trip);
+    if (Math.abs(actualMin - targetMin) > 1) {
+      setMessage({ kind: 'ok', text: `Closest possible is ${fmtTimer(actualMin)} — sent ${trip.legs.map((l) => l.flightNumber).join(' + ')} · ${[trip.legs[0].from, ...trip.legs.map((l) => l.to)].join(' → ')}` });
+    }
+  };
 
   const toggleSection = (key: 'active' | 'log') =>
     setSections((prev) => {
@@ -204,6 +233,18 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
 
       <div className="sim-sidebar__body">
         <section className="sim-section">
+          <div className="create-tabs" role="tablist" aria-label="New flight">
+            <button role="tab" aria-selected={createMode === 'route'} className={createMode === 'route' ? 'is-active' : ''} onClick={() => switchCreate('route')}>
+              Fly somewhere
+            </button>
+            <button role="tab" aria-selected={createMode === 'timer'} className={createMode === 'timer' ? 'is-active' : ''} onClick={() => switchCreate('timer')}>
+              Timer flight
+            </button>
+          </div>
+          {createMode === 'timer' ? (
+            <TimerForm busy={busy} setBusy={setBusy} onSent={timerSent} onError={(text) => setMessage({ kind: 'error', text })} />
+          ) : (
+          <>
           <form className="trip-form" onSubmit={submit}>
             <input
               className="trip-form__input"
@@ -243,8 +284,10 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
               </div>
             </div>
           )}
+          </>
+          )}
           {message && <div className={`sim-msg sim-msg--${message.kind}`}>{message.text}</div>}
-          {advanced && plan && plan.options.length > 0 && (
+          {createMode === 'route' && advanced && plan && plan.options.length > 0 && (
             <div className="itins">
               <div className="itins__head">
                 {plan.fromLabel} → {plan.toLabel} · {plan.options.length} options

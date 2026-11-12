@@ -5,8 +5,6 @@
 
 export const EARTH_RADIUS_KM = 6371.0088;
 export const KM_PER_NM = 1.852;
-export const FT_PER_M = 3.28084;
-export const KT_PER_MS = 1.943844;
 
 export interface LatLon {
   lat: number;
@@ -104,16 +102,6 @@ export function unwrapLongitudes(points: [number, number][]): [number, number][]
   return out;
 }
 
-/**
- * True when `p` plausibly lies on a flight from `origin` to `destination`.
- * Uses an ellipse test: the detour via p may not be much longer than the direct route.
- */
-export function isOnRoute(origin: LatLon, destination: LatLon, p: LatLon): boolean {
-  const direct = haversineKm(origin, destination);
-  const via = haversineKm(origin, p) + haversineKm(p, destination);
-  return via <= direct * 1.2 + 250;
-}
-
 export interface MovingPoint extends LatLon {
   gsKt: number | null;
   trackDeg: number | null;
@@ -121,13 +109,12 @@ export interface MovingPoint extends LatLon {
   ts: number;
 }
 
-/** Longest we keep extrapolating a position without a fresh report. */
+/** Longest we keep extrapolating a position without a fresh one. */
 export const MAX_EXTRAPOLATE_SEC = 150;
 
 /**
- * Dead reckoning: where the aircraft probably is *now*, given its last
- * reported position, ground speed and track. Keeps planes moving smoothly
- * between data refreshes.
+ * Dead reckoning: where the aircraft is *now*, given its last position, ground
+ * speed and track. Keeps planes moving smoothly between refreshes.
  */
 export function extrapolate(p: MovingPoint, nowMs: number): LatLon {
   if (p.onGround || !p.gsKt || p.trackDeg == null || p.gsKt < 30) return p;

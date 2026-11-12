@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Live global flight tracker on a satellite map, in a desktop window (simulation mode coming later).",
+  "description": "Flight simulator on a live satellite map with real day and night, in a desktop window.",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",

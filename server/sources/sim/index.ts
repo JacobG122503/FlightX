@@ -1,34 +1,34 @@
 /**
- * Simulation mode: a separate world of simulated flights that implements the
- * same FlightSource interface as live data, so the map, panel, search and
- * status bar all work unchanged — plus planning, booking, spawning and crashing.
+ * The simulator: every flight on FlightX's map — planning, booking, spawning
+ * and crashing, plus what the map, panel and search need.
  */
 import path from 'node:path';
 import { containsFn } from '../../lib/bounds';
-import type { Airport as RouteAirport, Bounds, FlightDetailResponse, FlightListResponse, FlightState, HealthResponse, TrackResponse } from '../../../shared/types';
-import type { CrashResponse, CustomPassenger, ItineraryOption, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimFlightInfo, SimStatusResponse, SimTripSummary, TripView } from '../../../shared/sim';
+import type { Airport as RouteAirport, Bounds, FlightDetailResponse, FlightListResponse, FlightState, TrackResponse } from '../../../shared/types';
+import type { CrashResponse, CustomPassenger, ItineraryOption, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimFlightInfo, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
 import { mapFor, passengerCount, passengerList } from './passengers';
 import { aircraftType as typeInfo } from './aircraft';
 import { person } from './names';
-import type { FlightSource } from '../types';
 import { simData, toSimAirport, distNm, type Airport } from './data';
 import { evaluate, sampleTrack } from './profile';
 import { parseTripQuery, resolvePlace } from './geocode';
-import { findOptions, randomOptions } from './planner';
+import { findOptions, randomOptions, timerOption } from './planner';
 import { SimStore, type LiveLeg, type StoredTrip } from './store';
 import { Rng } from './random';
 
 const MAX_SPAWN = 10_000;
 const MAX_ACTIVE_TRIPS = 25_000;
 const PLAN_TTL_MS = 30 * 60_000;
+/** Flights made from a length of time: 1 minute to 3 days. */
+const TIMER_MIN = 1;
+const TIMER_MAX = 72 * 60;
 
 function dataFile(): string {
   const dir = process.env.FLIGHTX_DATA_DIR || path.resolve(process.cwd(), '.data');
   return path.join(dir, 'simulation.json');
 }
 
-export class SimSource implements FlightSource {
-  readonly id = 'sim' as const;
+export class SimSource {
   private storeInstance: SimStore | null = null;
   private planCache = new Map<string, { opt: ItineraryOption; query: string; at: number }>();
 
@@ -67,16 +67,13 @@ export class SimSource implements FlightSource {
       kind: l.type.kind,
       reg: l.leg.reg,
       typeCode: l.type.icao,
-      country: null,
       ts: now,
-      feed: 'sim',
-      emergency: null,
       simRandom: l.trip.random,
     };
   }
 
-  // ── FlightSource ─────────────────────────────────────────────────────────
-  async list(bounds: Bounds): Promise<FlightListResponse> {
+  // ── Map, panel and search ────────────────────────────────────────────────
+  list(bounds: Bounds): FlightListResponse {
     const now = Date.now();
     this.store.advance(now);
     this.store.touch(now);
@@ -86,14 +83,14 @@ export class SimSource implements FlightSource {
       const st = this.stateOf(l, now);
       if (st && inView(st.lat, st.lon)) flights.push(st);
     }
-    return { flights, mode: 'regional', feeds: ['sim'], serverTime: now, updatedAt: now, refreshInMs: flights.length > 5000 ? 4000 : 2000, notice: null };
+    return { flights, serverTime: now, refreshInMs: flights.length > 5000 ? 4000 : 2000 };
   }
 
-  async detail(id: string): Promise<FlightDetailResponse> {
+  detail(id: string): FlightDetailResponse {
     const now = Date.now();
     this.store.advance(now);
     const l = this.store.find(id);
-    if (!l) return { id, state: null, aircraft: null, route: null, photo: null, serverTime: now };
+    if (!l) return { id, state: null, aircraft: null, route: null, serverTime: now };
     const d = simData();
     const country = l.leg.airline.iata || l.leg.airline.icao ? (d.airlines.get(l.leg.airline.iata ?? l.leg.airline.icao ?? '')?.country ?? null) : 'United States';
     const trip = l.trip;
@@ -138,22 +135,19 @@ export class SimSource implements FlightSource {
         airline: trip.kind === 'charter' ? null : l.leg.airline,
         origin: this.routeAirport(l.from),
         destination: this.routeAirport(l.to),
-        plausible: true,
-        source: 'FlightX simulator',
       },
-      photo: null,
       sim,
       serverTime: now,
     };
   }
 
-  async track(id: string): Promise<TrackResponse> {
+  track(id: string): TrackResponse {
     const l = this.store.find(id);
-    if (!l) return { id, points: [], sources: [] };
-    return { id, points: sampleTrack(l.profile, l.from, l.to, Date.now(), l.leg.seed), sources: ['sim'] };
+    if (!l) return { id, points: [] };
+    return { id, points: sampleTrack(l.profile, l.from, l.to, Date.now(), l.leg.seed) };
   }
 
-  async search(raw: string): Promise<FlightState[]> {
+  search(raw: string): FlightState[] {
     const q = raw.trim().toUpperCase().replace(/\s+/g, '');
     if (q.length < 2) return [];
     const now = Date.now();
@@ -172,14 +166,6 @@ export class SimSource implements FlightSource {
       if (out.length >= 25) break;
     }
     return out;
-  }
-
-  health(): HealthResponse {
-    return {
-      ok: true,
-      opensky: { authenticated: false, creditsRemaining: null, snapshotAgeSec: null, snapshotSize: 0, refreshSeconds: 0, rateLimitedForSec: null },
-      realtime: [],
-    };
   }
 
   // ── Simulation actions ───────────────────────────────────────────────────
@@ -316,6 +302,22 @@ export class SimSource implements FlightSource {
     const plan = this.plan(query, false);
     const best = plan.options.find((o) => o.tags.includes('best')) ?? plan.options[0];
     return { plan, trip: best ? this.book(best.id) : null };
+  }
+
+  /** Sends a random flight lasting as close as possible to `minutes`, starting right now. */
+  timer(minutes: number): TimerResponse {
+    const target = Math.round(Math.max(TIMER_MIN, Math.min(TIMER_MAX, Number(minutes) || 0)));
+    if (!Number.isFinite(Number(minutes)) || Number(minutes) <= 0) throw new Error('Pick a length of time for the flight.');
+    this.ensureCapacity(1);
+    const now = Date.now();
+    const opt = timerOption(target, now, new Rng());
+    if (!opt) throw new Error('Couldn’t find a flight for that time — try another.');
+    const label = target >= 60 ? `${Math.floor(target / 60)}h${target % 60 ? ` ${target % 60}m` : ''}` : `${target}m`;
+    const [trip] = this.store.add([opt], { random: false, query: `${label} flight`, startAt: now });
+    // Runway queues can shift the end by a minute or two; the last taxi to the gate absorbs it.
+    this.store.endTripAt(trip, this.store.liveLeg(trip, 0).profile.departAt + target * 60_000);
+    const summary = this.summary(trip, now);
+    return { trip: summary, targetMin: target, actualMin: (summary.finalArriveAt - summary.legs[0].departAt) / 60_000 };
   }
 
   spawn(count: number): number {

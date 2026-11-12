@@ -6,12 +6,9 @@ import { api } from '../api';
 import { PassengerModal } from './passengers/PassengerModal';
 import type { SelectedFlight } from '../hooks/useFlightDetail';
 import { useNow } from '../hooks/useNow';
-import { extrapolate, haversineKm, KM_PER_NM } from '../../shared/geo';
-import { altitudeCss } from '../lib/altitude';
-import { LIVE_MAX_AGE_MS } from '../lib/liveStatus';
+import { extrapolate, haversineKm } from '../../shared/geo';
+import { planeColor } from '../lib/icons';
 import {
-  FEED_LABEL,
-  fmtAgo,
   fmtAltitude,
   fmtAltitudeMeters,
   fmtCoord,
@@ -34,10 +31,8 @@ interface Props {
   onFocus: (on: boolean) => void;
   onZoomTo: () => void;
   onClose: () => void;
-  /** Simulated flights only: crash (delete) the aircraft. */
-  onCrash?: () => Promise<void>;
-  /** Which side of the window the panel sits on. */
-  side?: 'left' | 'right';
+  /** Crash (delete) the aircraft. */
+  onCrash: () => Promise<void>;
 }
 
 const PHASE_LABEL: Record<SimPhase, string> = {
@@ -47,13 +42,6 @@ const PHASE_LABEL: Record<SimPhase, string> = {
   descent: 'Descending',
   approach: 'On approach',
   'taxi-in': 'Taxiing to the gate',
-};
-
-const SIGNAL_LOST_MS = 120_000;
-const EMERGENCY: Record<string, string> = {
-  '7500': 'Squawking 7500 — unlawful interference',
-  '7600': 'Squawking 7600 — radio failure',
-  '7700': 'Squawking 7700 — general emergency',
 };
 
 function Photo({ photo, loading, alt }: { photo: AircraftPhoto | null; loading: boolean; alt: string }) {
@@ -92,7 +80,7 @@ function Photo({ photo, loading, alt }: { photo: AircraftPhoto | null; loading: 
         }}
       />
       <a className="photo__credit" href={photo.link ?? undefined} target="_blank" rel="noreferrer">
-        {photo.photographer ? `© ${photo.photographer}` : 'Photo'} · {photo.source}
+        Representative photo · {photo.source}
       </a>
     </div>
   );
@@ -110,7 +98,7 @@ function Row({ label, value, sub }: { label: string; value: ReactNode; sub?: Rea
   );
 }
 
-export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFocus, onZoomTo, onClose, onCrash, side = 'left' }: Props) {
+export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFocus, onZoomTo, onClose, onCrash }: Props) {
   const [crashArmed, setCrashArmed] = useState(false);
   const [showPax, setShowPax] = useState(false);
   useEffect(() => {
@@ -119,16 +107,10 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
     return () => window.clearTimeout(t);
   }, [crashArmed]);
   const now = useNow(1000);
-  const { detail, trail, trailSources, photo, photoLoading } = selected;
+  const { detail, photo, photoLoading } = selected;
   const route = detail?.route ?? null;
   const aircraft = detail?.aircraft ?? null;
   const sim = detail?.sim ?? null;
-  // Real flights: the tracked path starting low near the origin airport gives the takeoff time.
-  const first = trail[0];
-  const liveTakeoff =
-    !sim && first && route?.plausible && (first.onGround || (first.altFt ?? 99999) < 3000) && haversineKm(first, route.origin) < 40
-      ? first.t
-      : null;
 
   // Close on Escape.
   useEffect(() => {
@@ -140,26 +122,22 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
   }, [onClose]);
 
   const title = state?.callsign ?? aircraft?.reg ?? state?.reg ?? id.toUpperCase();
-  const subtitle = route?.plausible ? route.airline?.name : (aircraft?.owner ?? route?.airline?.name ?? state?.country);
+  const subtitle = route?.airline?.name ?? aircraft?.owner;
   const typeCode = state?.typeCode ?? aircraft?.typeCode;
   const reg = state?.reg ?? aircraft?.reg;
   const pos = state ? extrapolate(state, now) : null;
-  const ageMs = state ? now - state.ts : 0;
-  const signalLost = state ? ageMs > SIGNAL_LOST_MS : false;
-  const isLive = state ? ageMs < LIVE_MAX_AGE_MS : false;
-  const emergency = state?.squawk ? EMERGENCY[state.squawk] : undefined;
 
   let progress: { pct: number; flownKm: number; leftKm: number; etaMin: number | null } | null = null;
-  if (route?.plausible && pos) {
+  if (route && pos) {
     const flownKm = haversineKm(route.origin, pos);
     const leftKm = haversineKm(pos, route.destination);
     const pct = state?.onGround && leftKm < 10 ? 1 : flownKm / Math.max(1, flownKm + leftKm);
-    const etaMin = state?.gsKt && state.gsKt > 60 && !state.onGround ? (leftKm / (state.gsKt * KM_PER_NM)) * 60 : null;
+    const etaMin = sim && now < sim.landAt ? (sim.landAt - now) / 60_000 : null;
     progress = { pct, flownKm, leftKm, etaMin };
   }
 
   return (
-    <aside className={`panel glass${side === 'right' ? ' panel--right' : ''}`} aria-label={`Details for ${title}`}>
+    <aside className="panel panel--right glass" aria-label={`Details for ${title}`}>
       <div className="panel__media">
         <Photo photo={photo} loading={photoLoading} alt={`${typeCode ?? 'Aircraft'} ${reg ?? ''}`.trim()} />
         <button className="panel__close" aria-label="Close" onClick={onClose}>
@@ -179,9 +157,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
           </div>
         </div>
 
-        {emergency && <div className="alert alert--danger">{emergency}</div>}
-
-        {route?.plausible ? (
+        {route ? (
           <div className="route">
             <div className="route__ends">
               <div className="route__end">
@@ -210,17 +186,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
             )}
           </div>
         ) : (
-          <div className="route route--unknown">
-            {route ? (
-              <span title={`The flight-number database lists ${route.callsign} as ${route.origin.iata ?? route.origin.icao} → ${route.destination.iata ?? route.destination.icao}, which doesn't match where this plane is.`}>
-                Route unverified
-              </span>
-            ) : detail ? (
-              'No route information for this flight.'
-            ) : (
-              'Looking up route…'
-            )}
-          </div>
+          <div className="route route--unknown">{detail ? 'This flight has finished.' : 'Loading flight…'}</div>
         )}
 
         <div className="panel__actions">
@@ -243,7 +209,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
           </button>
         </div>
 
-        {onCrash && state && (
+        {state && (
           <button
             className={`btn btn--danger crash-btn${crashArmed ? ' is-armed' : ''}`}
             onClick={() => {
@@ -313,19 +279,13 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
 
         {state ? (
           <section className="section">
-            <h3 className="section__title">
-              <span className={isLive ? 'live-dot' : signalLost ? 'live-dot is-lost' : 'delayed-dot'} />
-              {isLive ? 'Live' : signalLost ? 'Signal lost' : 'Delayed'}
-              <span className="section__meta">
-                {fmtAgo(ageMs)} · {FEED_LABEL[state.feed] ?? state.feed}
-              </span>
-            </h3>
+            <h3 className="section__title">Position</h3>
             <dl className="grid">
               <Row
                 label="Altitude"
                 value={
                   <>
-                    <span className="dot" style={{ background: altitudeCss(state.altFt, state.onGround) }} />
+                    <span className="dot" style={{ background: planeColor(state) }} />
                     {fmtAltitude(state.altFt, state.onGround)}
                   </>
                 }
@@ -337,15 +297,12 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
               <Row label="Latitude" value={pos ? fmtCoord(pos.lat, 'N', 'S') : '—'} />
               <Row label="Longitude" value={pos ? fmtCoord(pos.lon, 'E', 'W') : '—'} />
               <Row label="Squawk" value={state.squawk ?? '—'} />
-              {!sim && liveTakeoff != null && (
-                <Row label="Took off" value={timeTz(liveTakeoff)} sub={route?.origin.iata ?? undefined} />
-              )}
-              <Row label="Flown path" value={trail.length ? `${trail.length} points` : '—'} sub={trailSources.map((s) => FEED_LABEL[s] ?? s).join(' + ') || undefined} />
+
             </dl>
           </section>
         ) : (
           <section className="section">
-            <div className="muted">{detail ? 'No current position for this aircraft.' : 'Loading live data…'}</div>
+            <div className="muted">{detail ? 'This plane isn’t flying any more.' : 'Loading…'}</div>
           </section>
         )}
 
@@ -358,7 +315,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
             />
             <Row label="Registration" value={reg ?? '—'} />
             <Row label="Operator" value={aircraft?.owner ?? route?.airline?.name ?? '—'} />
-            <Row label="Country" value={aircraft?.country ?? state?.country ?? '—'} />
+            <Row label="Country" value={aircraft?.country ?? '—'} />
             <Row label="ICAO 24-bit" value={<span className="mono">{id.toUpperCase()}</span>} />
             <Row label="Callsign" value={state?.callsign ?? '—'} />
           </dl>

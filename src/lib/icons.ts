@@ -3,8 +3,9 @@
  * All icons point north; the layer rotates them by track.
  * Shapes are defined by their right half and mirrored, so they're always symmetric.
  */
-import type { AircraftKind } from '../../shared/types';
-import { altitudeBucket, altitudeCss } from './altitude';
+import type { AircraftKind, FlightState } from '../../shared/types';
+
+export type RGBA = [number, number, number, number];
 
 const SIZE = 64;
 const OUTLINE = 'rgba(8, 11, 18, 0.9)';
@@ -80,16 +81,20 @@ export interface IconDef {
 
 const cache = new Map<string, IconDef>();
 
-/** Simulation colours: on the ground, randomly spawned, and sent by you. */
+/** Plane colours: on the ground, randomly spawned, and sent by you. */
 export const SIM_COLORS = { ground: '#8b95a5', random: '#FFD60A', mine: '#3CB371' } as const;
 
-/** Icon for an aircraft: shape by kind, fill colour by altitude band (or a fixed colour). */
-export function aircraftIcon(kind: AircraftKind, altFt: number | null, onGround: boolean, highlight = false, fillOverride?: string): IconDef {
-  const bucket = altitudeBucket(altFt, onGround);
-  const id = `${kind}:${fillOverride ?? bucket}:${highlight ? 1 : 0}`;
+/** A plane's colour: grey on the ground, yellow if random, green if yours. */
+export const planeColor = (f: Pick<FlightState, 'onGround' | 'simRandom'>) =>
+  f.onGround ? SIM_COLORS.ground : f.simRandom ? SIM_COLORS.random : SIM_COLORS.mine;
+
+export const hexRgba = (hex: string, a = 255): RGBA => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16), a];
+
+/** Icon for an aircraft: shape by kind, in the given colour. */
+export function aircraftIcon(kind: AircraftKind, fill: string, highlight = false): IconDef {
+  const id = `${kind}:${fill}:${highlight ? 1 : 0}`;
   let icon = cache.get(id);
   if (!icon) {
-    const fill = fillOverride ?? altitudeCss(bucket < 0 ? 0 : bucket, bucket < 0);
     icon = {
       id,
       url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg(kind, fill, highlight))}`,
@@ -107,22 +112,7 @@ export function aircraftIcon(kind: AircraftKind, altFt: number | null, onGround:
 /** Every plane is drawn the same size (before zoom scaling); only the silhouette differs. */
 export const PLANE_SIZE = 26;
 
-/** Base on-screen size in pixels for each kind (before zoom scaling). */
-export const ICON_SIZE: Record<AircraftKind, number> = {
-  heavy: 32,
-  jet: 26,
-  unknown: 26,
-  light: 20,
-  glider: 22,
-  heli: 22,
-  ground: 12,
-};
-
-/**
- * Icon scale by zoom. Live traffic (thousands of planes) shrinks when zoomed out so the
- * world isn't a solid carpet; simulated planes get bigger when zoomed out so they're easy to see.
- */
-export function zoomScale(zoom: number, sim = false): number {
-  if (sim) return Math.max(1, Math.min(1.6, 1.6 - (zoom - 2) * 0.09));
-  return Math.max(0.5, Math.min(1.15, 0.45 + (zoom - 2) * 0.11));
+/** Icon scale by zoom: planes get bigger when zoomed out so they're easy to see. */
+export function zoomScale(zoom: number): number {
+  return Math.max(1, Math.min(1.6, 1.6 - (zoom - 2) * 0.09));
 }

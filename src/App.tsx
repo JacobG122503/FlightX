@@ -20,10 +20,10 @@ import { usePageVisible } from './hooks/usePageVisible';
 import { SATELLITE_STYLE } from './lib/mapStyles';
 import { api, serverNow } from './api';
 import { extrapolate, greatCircle, normalizeLon, unwrapLongitudes } from '../shared/geo';
-import type { Bounds, FlightState, SourceId } from '../shared/types';
+import type { Bounds, FlightState } from '../shared/types';
 import type { TripView } from '../shared/sim';
 
-// ── Remembered between runs: last view and map style. Safe if storage is unavailable. ──
+// ── Remembered between runs: last map view. Safe if storage is unavailable. ──
 const STORAGE_KEY = 'flightx:view';
 interface Stored {
   lat: number;
@@ -66,7 +66,6 @@ function savePref(key: string, value: string) {
 }
 
 const PANEL_W = 372;
-
 const SIDEBAR_W = 360;
 
 /** MapLibre can report longitudes beyond ±180 when world copies are visible. */
@@ -99,8 +98,6 @@ export default function App() {
 }
 
 function FlightApp() {
-  // FlightX always opens in Simulation mode.
-  const [source, setSource] = useState<SourceId>('sim');
   const [sidebarOpen, setSidebarOpen] = useState(() => loadPref('flightx:sidebar', 'open', ['open', 'closed'] as const) === 'open');
   /** Crashed planes are hidden immediately, before the next refresh confirms they're gone. */
   const [crashed, setCrashed] = useState<Set<string>>(() => new Set());
@@ -116,14 +113,13 @@ function FlightApp() {
   /** Pan to the selected aircraft once its position is known (deep links, search results). */
   const panPending = useRef(Boolean(selectedId));
 
-  const { data, error, nextAt } = useFlights(view, source, visible);
+  const { data, error } = useFlights(view, visible);
   const flights = useMemo(() => (data?.flights ?? []).filter((f) => !crashed.has(f.id)), [data, crashed]);
-  const selected = useFlightDetail(selectedId, source, visible);
+  const selected = useFlightDetail(selectedId, visible);
   const [tripView, setTripView] = useState<TripView>('newest');
-  const sim = useSimStatus(source === 'sim' && visible, tripView);
+  const sim = useSimStatus(visible, tripView);
   /** Chill mode: following a plane with no input for 30 s hides the UI (screensaver). */
   const chill = useIdle(30_000, follow && Boolean(selectedId));
-  const simMode = source === 'sim';
 
   const selectedState = useMemo(() => {
     if (!selectedId) return null;
@@ -181,10 +177,10 @@ function FlightApp() {
     const pos = extrapolate(selectedState, serverNow());
     const route = selected.detail?.route;
     const pts: [number, number][] = [];
-    if (route?.plausible) pts.push([route.origin.lon, route.origin.lat]);
+    if (route) pts.push([route.origin.lon, route.origin.lat]);
     for (const p of selected.trail) pts.push([p.lon, p.lat]);
     pts.push([pos.lon, pos.lat]);
-    if (route?.plausible) for (const p of greatCircle(pos, route.destination, 32)) pts.push([p.lon, p.lat]);
+    if (route) for (const p of greatCircle(pos, route.destination, 32)) pts.push([p.lon, p.lat]);
     let west = Infinity, east = -Infinity, south = Infinity, north = -Infinity;
     for (const [lon, lat] of unwrapLongitudes(pts)) {
       west = Math.min(west, lon);
@@ -199,24 +195,12 @@ function FlightApp() {
       ],
       // Leave room for the panels and the bars on top.
       {
-        padding: simMode
-          ? { top: 120, bottom: 70, left: (sidebarOpen ? SIDEBAR_W : 0) + 60, right: PANEL_W + 60 }
-          : { top: 120, bottom: 70, left: PANEL_W + 60, right: 90 },
+        padding: { top: 120, bottom: 70, left: (sidebarOpen ? SIDEBAR_W : 0) + 60, right: PANEL_W + 60 },
         maxZoom: 9,
         duration: 1200,
       },
     );
-  }, [map, selectedState, selected.trail, selected.detail, simMode, sidebarOpen]);
-
-  const changeSource = useCallback(
-    (next: SourceId) => {
-      if (next === source) return;
-      setSource(next);
-      select(null);
-      setCrashed(new Set());
-    },
-    [source, select],
-  );
+  }, [map, selectedState, selected.trail, selected.detail, sidebarOpen]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((open) => {
@@ -225,7 +209,7 @@ function FlightApp() {
     });
   }, []);
 
-  /** From the simulation sidebar: select a flight and fly the map to it. */
+  /** From the sidebar: select a flight and fly the map to it. */
   const selectSimFlight = useCallback((id: string) => {
     setSeed(null);
     setSelectedId(id);
@@ -262,7 +246,7 @@ function FlightApp() {
   }, [map, selectedState]);
 
   return (
-    <div className={`app mode-${source}${selectedId ? ' has-panel' : ''}${simMode && sidebarOpen ? ' sidebar-open' : ''}${chill ? ' is-chill' : ''}`}>
+    <div className={`app${selectedId ? ' has-panel' : ''}${sidebarOpen ? ' sidebar-open' : ''}${chill ? ' is-chill' : ''}`}>
       <div className="map-wrap">
         <Map
           id="main"
@@ -290,24 +274,13 @@ function FlightApp() {
             zoom={zoom}
             follow={follow}
             hideOthers={focusOnly}
-            colorMode={simMode ? 'sim' : 'altitude'}
             onSelect={select}
           />
         </Map>
       </div>
 
       <div className="titlebar-drag" />
-      <TopBar
-        source={source}
-        list={data}
-        count={flights.length}
-        error={error}
-        nextAt={nextAt}
-        focus={focusOnly ? selectedState : undefined}
-        flights={flights}
-        onPick={pickFromSearch}
-        onSource={changeSource}
-      />
+      <TopBar count={data ? flights.length : null} error={error} flights={flights} onPick={pickFromSearch} />
 
       <div className="top-center">
         {focusOnly && selectedState && (
@@ -316,21 +289,18 @@ function FlightApp() {
             <button onClick={() => setFocusOnly(false)}>Show all planes</button>
           </div>
         )}
-        {data?.notice && !error && <div className="notice glass">{data.notice}</div>}
       </div>
 
-      {simMode && (
-        <SimSidebar
-          open={sidebarOpen}
-          onToggle={toggleSidebar}
-          status={sim.status}
-          onChanged={() => void sim.refresh()}
-          onSelectFlight={selectSimFlight}
-          view={tripView}
-          onView={setTripView}
-        />
-      )}
-      {simMode && <MissedModal onSelectFlight={selectSimFlight} />}
+      <SimSidebar
+        open={sidebarOpen}
+        onToggle={toggleSidebar}
+        status={sim.status}
+        onChanged={() => void sim.refresh()}
+        onSelectFlight={selectSimFlight}
+        view={tripView}
+        onView={setTripView}
+      />
+      <MissedModal onSelectFlight={selectSimFlight} />
       <Tooltips />
 
       {selectedId && (
@@ -345,13 +315,12 @@ function FlightApp() {
           onFocus={setFocus}
           onZoomTo={zoomTo}
           onClose={() => select(null)}
-          onCrash={simMode ? crashSelected : undefined}
-          side={simMode ? 'right' : 'left'}
+          onCrash={crashSelected}
         />
       )}
 
       <div className="bottom-left">
-        <Legend mode={simMode ? 'sim' : 'altitude'} />
+        <Legend />
       </div>
 
       <MapControls />

@@ -168,72 +168,6 @@ pre,
   letter-spacing: -0.01em;
 }
 
-.mode-switch {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  margin-left: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-}
-.mode-switch button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-}
-.mode-switch button.is-active {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
-}
-.mode-switch button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-.soon {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--muted);
-}
-
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--live);
-  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
-  animation: pulse 2s infinite;
-  display: inline-block;
-  flex: none;
-}
-.live-dot.is-lost {
-  background: var(--warning);
-  animation: none;
-}
-
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
-  }
-  70% {
-    box-shadow: 0 0 0 7px rgba(52, 211, 153, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
-  }
-}
-
 @keyframes blink {
   to {
     opacity: 0.25;
@@ -246,7 +180,7 @@ pre,
   height: 46px;
 }
 
-/* ── Live status ────────────────────────────────────────────────────────── */
+/* ── Status ─────────────────────────────────────────────────────────────── */
 
 .topbar__status {
   margin-left: auto;
@@ -254,67 +188,10 @@ pre,
   align-items: center;
   gap: 10px;
   height: 46px;
-  padding: 0 14px 0 7px;
+  padding: 0 16px;
   white-space: nowrap;
   font-size: 12.5px;
   color: var(--text);
-  flex: none;
-}
-.topbar__status.is-offline {
-  border-color: rgba(248, 113, 113, 0.4);
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 9px;
-  font-weight: 700;
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-}
-.status-badge svg {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
-}
-.status-badge.is-live {
-  background: rgba(52, 211, 153, 0.16);
-  color: #6ee7b7;
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  letter-spacing: 0.1em;
-}
-.status-badge.is-delayed {
-  background: rgba(251, 191, 36, 0.13);
-  color: #fcd34d;
-  border: 1px solid rgba(251, 191, 36, 0.35);
-}
-.status-badge.is-offline {
-  background: rgba(248, 113, 113, 0.15);
-  color: #fca5a5;
-  border: 1px solid rgba(248, 113, 113, 0.4);
-  letter-spacing: 0.08em;
-}
-.status-badge.is-connecting {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--muted);
-  border: 1px solid var(--border-strong);
-}
-.offline-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-.delayed-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warning);
-  display: inline-block;
   flex: none;
 }
 .status-count strong {
@@ -324,11 +201,6 @@ pre,
 .status-detail {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-.status-hint {
-  color: var(--faint);
-  padding-left: 10px;
-  border-left: 1px solid var(--border-strong);
 }
 
 /* ── Search ─────────────────────────────────────────────────────────────── */
@@ -442,19 +314,8 @@ pre,
   pointer-events: none;
   max-width: min(640px, calc(100% - 2 * var(--gutter)));
 }
-.app.has-panel .top-center {
-  /* Centre in the map area to the right of the flight panel. */
-  left: calc(50% + (372px + var(--gutter)) / 2);
-  max-width: min(560px, calc(100% - 372px - 4 * var(--gutter)));
-}
 .top-center > * {
   pointer-events: auto;
-}
-.notice {
-  padding: 9px 14px;
-  font-size: 12.5px;
-  color: #fde68a;
-  border-color: rgba(251, 191, 36, 0.3);
 }
 .focus-pill {
   display: flex;
@@ -676,18 +537,6 @@ pre,
   border-color: var(--border-strong);
 }
 
-.alert {
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 12.5px;
-}
-.alert--danger {
-  background: rgba(248, 113, 113, 0.14);
-  color: #fecaca;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-}
-
 .route {
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid var(--border);
@@ -861,9 +710,6 @@ pre,
   gap: 6px;
   transition: left 0.2s ease;
 }
-.app.has-panel .bottom-left {
-  left: calc(372px + 2 * var(--gutter));
-}
 
 .legend {
   padding: 9px 12px 8px;
@@ -907,49 +753,6 @@ pre,
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 7px;
-}
-.legend__row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-.legend__ground-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.legend__ground {
-  width: 16px;
-  height: 7px;
-  border-radius: 2px;
-}
-.legend__scale {
-  flex: 1;
-  position: relative;
-}
-.legend__bar {
-  height: 7px;
-  border-radius: 4px;
-}
-.legend__ticks {
-  position: relative;
-  height: 14px;
-}
-.legend__tick {
-  position: absolute;
-  top: 3px;
-  transform: translateX(-50%);
-  font-size: 10px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.legend__tick:first-child {
-  transform: none;
-}
-.legend__tick--static {
-  position: static;
-  transform: none;
-  margin-top: 3px;
 }
 
 .attribution {
@@ -1005,56 +808,33 @@ pre,
   animation: blink 0.6s ease-in-out infinite alternate;
 }
 
-
-
 .toast {
   padding: 8px 12px;
   font-size: 12px;
 }
 
-/* ── Simulation mode ────────────────────────────────────────────────────── */
-
-.status-badge.is-sim {
-  background: rgba(167, 139, 250, 0.16);
-  color: #c4b5fd;
-  border: 1px solid rgba(167, 139, 250, 0.42);
-  letter-spacing: 0.08em;
-}
-.sim-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #a78bfa;
-  box-shadow: 0 0 8px #a78bfa;
-}
-.badge--sim {
-  background: rgba(167, 139, 250, 0.15);
-  color: #ddd6fe;
-  border-color: rgba(167, 139, 250, 0.4);
-  font-family: var(--font);
-  font-weight: 600;
-}
+/* ── Simulation ─────────────────────────────────────────────────────────── */
 
 .panel.panel--right {
   left: auto;
   right: var(--gutter);
 }
-.app.mode-sim.has-panel .controls {
+.app.has-panel .controls {
   right: calc(var(--panel-w, 372px) + 2 * var(--gutter));
 }
-.app.mode-sim.has-panel .bottom-left {
+.app.has-panel .bottom-left {
   left: var(--gutter);
 }
-.app.mode-sim.sidebar-open .bottom-left {
+.app.sidebar-open .bottom-left {
   left: calc(360px + 2 * var(--gutter));
 }
-.app.mode-sim .top-center {
+.app .top-center {
   left: 50%;
 }
-.app.mode-sim.sidebar-open:not(.has-panel) .top-center {
+.app.sidebar-open:not(.has-panel) .top-center {
   left: calc(50% + 186px);
 }
-.app.mode-sim.has-panel:not(.sidebar-open) .top-center {
+.app.has-panel:not(.sidebar-open) .top-center {
   left: calc(50% - 192px);
 }
 
@@ -2381,3 +2161,82 @@ pre,
     transition: none !important;
   }
 }
+
+/* ── New flight: tabs and timer flight form ─────────────────────────────── */
+
+.create-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+.create-tabs button {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.create-tabs button.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.timer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.timer-form__row {
+  display: flex;
+  gap: 8px;
+}
+.timer-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--muted);
+  font-weight: 600;
+}
+.timer-field:focus-within {
+  border-color: rgba(167, 139, 250, 0.6);
+}
+.timer-field input {
+  width: 38px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: right;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.timer-field input::-webkit-inner-spin-button {
+  display: none;
+}
+.presets--timer {
+  flex-wrap: wrap;
+}
+.presets--timer button {
+  flex: 1 0 calc(25% - 6px);
+}
+.timer-form__hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+

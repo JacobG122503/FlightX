@@ -243,6 +243,19 @@ export class SimStore {
     return l;
   }
 
+  /**
+   * Flights made from a chosen length of time: lengthen or shorten the final taxi to the gate
+   * (a quicker taxi, or a short wait for the gate) so the trip ends exactly at `endAt` — within reason.
+   */
+  endTripAt(trip: StoredTrip, endAt: number, maxShiftMin = 15) {
+    const i = trip.legs.length - 1;
+    const leg = trip.legs[i];
+    const delta = (endAt - this.liveLeg(trip, i).profile.arriveAt) / 60_000;
+    leg.taxiInMin = Math.max(1, leg.taxiInMin + Math.max(-maxShiftMin, Math.min(maxShiftMin, delta)));
+    this.live.delete(leg);
+    this.markDirty();
+  }
+
   paxInput(l: LiveLeg): PaxInput {
     return {
       seed: l.leg.seed,

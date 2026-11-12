@@ -1,5 +1,4 @@
 import type { FlightDetailResponse, FlightState } from '../../shared/types';
-import { extrapolate, haversineKm, KM_PER_NM } from '../../shared/geo';
 import { useNow } from '../hooks/useNow';
 import { fmtAltitude, fmtSpeed } from '../lib/format';
 import { fmtMinutes, timeTz } from '../lib/time';
@@ -13,7 +12,6 @@ interface Props {
 export function ChillHud({ state, detail }: Props) {
   const now = useNow(1000);
   const sim = detail?.sim ?? null;
-  const route = detail?.route ?? null;
   const name = state.callsign ?? state.reg ?? state.id.toUpperCase();
 
   let from: string | null = null;
@@ -26,14 +24,6 @@ export function ChillHud({ state, detail }: Props) {
     to = sim.destination.iata;
     landAt = sim.landAt;
     progress = Math.min(1, Math.max(0, (now - sim.takeoffAt) / (sim.landAt - sim.takeoffAt)));
-  } else if (route?.plausible) {
-    from = route.origin.iata ?? route.origin.icao;
-    to = route.destination.iata ?? route.destination.icao;
-    const pos = extrapolate(state, now);
-    const flown = haversineKm(route.origin, pos);
-    const left = haversineKm(pos, route.destination);
-    progress = flown / Math.max(1, flown + left);
-    if (state.gsKt && state.gsKt > 60 && !state.onGround) landAt = now + (left / (state.gsKt * KM_PER_NM)) * 3_600_000;
   }
 
   const minutesLeft = landAt != null ? Math.max(0, (landAt - now) / 60_000) : null;

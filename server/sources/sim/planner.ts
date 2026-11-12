@@ -444,3 +444,151 @@ export function randomOptions(count: number, now: number, rng: Rng): ItineraryOp
   }
   return out;
 }
+
+// ── Flights from a length of time ────────────────────────────────────────────
+// Find a real airline trip whose length (pushback → parked at the final gate) is as close
+// as possible to a chosen time. Nonstops cover up to ~19 h; longer times chain connections.
+
+interface RouteRef {
+  from: Airport;
+  to: Airport;
+  nm: number;
+}
+
+/** Every nonstop route, shortest first. */
+let routeRefs: RouteRef[] | null = null;
+/** Rough trip length ≈ a + b × distance (fitted from real planned flights). */
+let lengthFit: { a: number; b: number } | null = null;
+
+function allRoutes(d: SimData): RouteRef[] {
+  routeRefs ??= d.routeList.map((r) => ({ from: r.from, to: r.info.to, nm: distNm(r.from, r.info.to) })).sort((x, y) => x.nm - y.nm);
+  return routeRefs;
+}
+
+function nonstop(d: SimData, from: Airport, to: Airport, start: number, rng: Rng): ItineraryOption | null {
+  const variants = airlineVariants(d, [from, to]);
+  return variants.length ? airlineOption(d, [from, to], rng.pick(variants), start, rng) : null;
+}
+
+const exactMin = (o: ItineraryOption) => (o.arriveAt - o.departAt) / 60_000;
+
+function fitLength(d: SimData, rng: Rng): { a: number; b: number } {
+  if (lengthFit) return lengthFit;
+  const routes = allRoutes(d);
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let i = 0; i < 400; i++) {
+    const r = rng.pick(routes);
+    const o = nonstop(d, r.from, r.to, 0, rng);
+    if (!o) continue;
+    xs.push(r.nm);
+    ys.push(exactMin(o));
+  }
+  const mx = xs.reduce((s, x) => s + x, 0) / xs.length;
+  const my = ys.reduce((s, y) => s + y, 0) / ys.length;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < xs.length; i++) {
+    num += (xs[i] - mx) * (ys[i] - my);
+    den += (xs[i] - mx) ** 2;
+  }
+  const b = den ? num / den : 0.13;
+  lengthFit = { a: my - b * mx, b };
+  return lengthFit;
+}
+
+/** Index of the first route at least `nm` long. */
+function lowerBound(routes: RouteRef[], nm: number): number {
+  let lo = 0;
+  let hi = routes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (routes[mid].nm < nm) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+interface Candidate {
+  opt: ItineraryOption;
+  err: number;
+}
+
+/** Nonstop routes around the right distance, planned for real; the closest ones win. */
+function nonstopCandidates(d: SimData, targetMin: number, start: number, rng: Rng): Candidate[] {
+  const routes = allRoutes(d);
+  const fit = fitLength(d, rng);
+  const out: Candidate[] = [];
+  // Widen the distance window until there's a decent pool to choose from.
+  for (let tol = Math.max(15, targetMin * 0.1); tol <= Math.max(240, targetMin); tol *= 2) {
+    const lo = lowerBound(routes, (targetMin - tol - fit.a) / fit.b);
+    const hi = lowerBound(routes, (targetMin + tol - fit.a) / fit.b);
+    if (hi - lo < 40 && hi - lo < routes.length) continue;
+    for (let i = 0; i < 220; i++) {
+      const r = routes[lo + Math.floor(rng.next() * (hi - lo))];
+      if (!r) break;
+      const opt = nonstop(d, r.from, r.to, start, rng);
+      if (opt) out.push({ opt, err: Math.abs(exactMin(opt) - targetMin) });
+    }
+    break;
+  }
+  return out;
+}
+
+/** Longer times: a random walk of connecting flights whose last leg fills the remaining time. */
+function chainCandidates(d: SimData, targetMin: number, start: number, rng: Rng, attempts: number): Candidate[] {
+  const fit = fitLength(d, rng);
+  const est = (a: Airport, b: Airport) => fit.a + fit.b * distNm(a, b);
+  const turn = 8; // average minutes at the gate between flights
+  const longest = est(allRoutes(d).at(-1)!.from, allRoutes(d).at(-1)!.to);
+  const minLegs = Math.max(2, Math.ceil((targetMin + turn) / (longest * 0.85)));
+  airportPicker ??= new WeightedPicker(d.flyable, (a) => a.weight);
+  const out: Candidate[] = [];
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const legs = minLegs + rng.int(0, 1);
+    const path: Airport[] = [airportPicker.pick(rng)];
+    let left = targetMin;
+    let ok = true;
+    for (let i = 0; i < legs - 1 && ok; i++) {
+      const here = path[path.length - 1];
+      const share = left / (legs - i);
+      const next = [...(d.routes.get(here)?.keys() ?? [])].filter((x) => !path.includes(x) && Math.abs(est(here, x) - share) < share * 0.35);
+      if (!next.length) ok = false;
+      else {
+        const x = rng.pick(next);
+        left -= est(here, x) + turn;
+        path.push(x);
+      }
+    }
+    if (!ok || left < 15) continue;
+    const here = path[path.length - 1];
+    const last = [...(d.routes.get(here)?.keys() ?? [])]
+      .filter((x) => !path.includes(x))
+      .map((x) => ({ x, e: Math.abs(est(here, x) - left) }))
+      .sort((a, b) => a.e - b.e)
+      .slice(0, 5);
+    if (!last.length) continue;
+    path.push(rng.pick(last).x);
+    const variants = airlineVariants(d, path);
+    if (!variants.length) continue;
+    const opt = airlineOption(d, path, rng.pick(variants), start, rng);
+    out.push({ opt, err: Math.abs(exactMin(opt) - targetMin) });
+  }
+  return out;
+}
+
+/**
+ * A random airline trip lasting as close to `targetMin` minutes as possible (pushback to
+ * parked at the final gate). Among the closest matches, one is picked at random.
+ */
+export function timerOption(targetMin: number, start: number, rng: Rng): ItineraryOption | null {
+  const d = simData();
+  let pool = nonstopCandidates(d, targetMin, start, rng);
+  const best = Math.min(Infinity, ...pool.map((c) => c.err));
+  // Nonstops can't get close (very long times): try connecting flights too.
+  if (best > Math.max(3, targetMin * 0.01)) pool = pool.concat(chainCandidates(d, targetMin, start, rng, 600));
+  if (!pool.length) return null;
+  const closest = Math.min(...pool.map((c) => c.err));
+  const near = pool.filter((c) => c.err <= closest + 1);
+  return rng.pick(near).opt;
+}

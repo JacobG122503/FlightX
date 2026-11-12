@@ -1,12 +1,8 @@
-/**
- * deck.gl layer construction, kept free of React and Google Maps so it can be
- * reused (e.g. by the simulator view) and rendered by any deck.gl host.
- */
+/** deck.gl layer construction, kept free of React. */
 import { IconLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension, type PathStyleExtensionProps } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { aircraftIcon, PLANE_SIZE, SIM_COLORS, zoomScale } from './icons';
-import { altitudeRgba, type RGBA } from './altitude';
+import { aircraftIcon, hexRgba, PLANE_SIZE, planeColor, SIM_COLORS, zoomScale, type RGBA } from './icons';
 import { extrapolate, greatCircle, unwrapLongitudes, type LatLon } from '../../shared/geo';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
 
@@ -30,21 +26,13 @@ export interface RouteSegment {
 
 export const toPos = (p: LatLon): Position => [p.lon, p.lat];
 
-export type ColorMode = 'altitude' | 'sim';
-
-/** Simulation colour for a plane: grey on the ground, yellow if random, green if yours. */
-export const simFill = (f: FlightState) => (f.onGround ? SIM_COLORS.ground : f.simRandom ? SIM_COLORS.random : SIM_COLORS.mine);
-const hexRgba = (hex: string, a = 255): RGBA => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16), a];
-
-/** Flown path coloured by altitude, ending at the aircraft's live (extrapolated) position. */
-export function buildTrail(trail: TrackPoint[], selected: FlightState | null, selectedPos: LatLon | null, mode: ColorMode = 'altitude'): TrailPath[] {
+/** Flown path in the plane's colour, ending at its current position. */
+export function buildTrail(trail: TrackPoint[], selected: FlightState | null, selectedPos: LatLon | null): TrailPath[] {
   if (!selected || !selectedPos || trail.length === 0) return [];
   const path = trail.map((p) => [p.lon, p.lat] as Position);
-  const solid = mode === 'sim' ? hexRgba(selected.simRandom ? SIM_COLORS.random : SIM_COLORS.mine) : null;
-  const colors = trail.map((p) => solid ?? altitudeRgba(p.altFt, p.onGround));
   path.push(toPos(selectedPos));
-  colors.push(solid ?? altitudeRgba(selected.altFt, selected.onGround));
-  return [{ path: unwrapLongitudes(path), colors }];
+  const solid = hexRgba(selected.simRandom ? SIM_COLORS.random : SIM_COLORS.mine);
+  return [{ path: unwrapLongitudes(path), colors: path.map(() => solid) }];
 }
 
 /** Dashed great circle to the destination (plus from the origin if there's no flown track). */
@@ -54,7 +42,7 @@ export function buildRoute(
   selectedPos: LatLon | null,
   trailLength: number,
 ): RouteSegment[] {
-  if (!route?.plausible || !selected || !selectedPos || selected.onGround) return [];
+  if (!route || !selected || !selectedPos || selected.onGround) return [];
   const segments: RouteSegment[] = [{ path: unwrapLongitudes(greatCircle(selectedPos, route.destination, 96).map(toPos)) }];
   if (trailLength < 2) segments.push({ path: unwrapLongitudes(greatCircle(route.origin, selectedPos, 96).map(toPos)) });
   return segments;
@@ -74,15 +62,12 @@ export interface LayerInput {
   zoom: number;
   /** Server-corrected time used for dead reckoning. */
   now: number;
-  colorMode: ColorMode;
   onHover?: (info: PickingInfo<FlightState>) => void;
 }
 
 export function buildFlightLayers(input: LayerInput): Layer[] {
-  const { others, labeled, labelsOn, selected, selectedPos, trail, route, airports, zoom, now, onHover, colorMode } = input;
-  const sim = colorMode === 'sim';
-  const sizeScale = zoomScale(zoom, sim);
-  const fill = (d: FlightState) => (sim ? simFill(d) : undefined);
+  const { others, labeled, labelsOn, selected, selectedPos, trail, route, airports, zoom, now, onHover } = input;
+  const sizeScale = zoomScale(zoom);
   const layers: Layer[] = [];
 
   if (trail.length) {
@@ -101,7 +86,6 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
         id: 'trail',
         data: trail,
         getPath: (d) => d.path,
-        // One colour per vertex → altitude gradient along the path.
         getColor: (d) => d.colors as unknown as RGBA,
         getWidth: 3.5,
         widthUnits: 'pixels',
@@ -131,7 +115,7 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
     new IconLayer<FlightState>({
       id: 'aircraft',
       data: others,
-      getIcon: (d) => aircraftIcon(d.kind, d.altFt, d.onGround, false, fill(d)),
+      getIcon: (d) => aircraftIcon(d.kind, planeColor(d)),
       getPosition: (d) => toPos(extrapolate(d, now)),
       getAngle: (d) => -(d.trackDeg ?? 0),
       getSize: PLANE_SIZE,
@@ -142,7 +126,7 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
       highlightColor: [255, 255, 255, 80],
       alphaCutoff: 0.05,
       onHover,
-      updateTriggers: { getPosition: now, getIcon: colorMode },
+      updateTriggers: { getPosition: now },
     }),
   );
 
@@ -218,7 +202,7 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
       new IconLayer<FlightState>({
         id: 'aircraft-selected',
         data,
-        getIcon: (d) => aircraftIcon(d.kind, d.altFt, d.onGround, true, fill(d)),
+        getIcon: (d) => aircraftIcon(d.kind, planeColor(d), true),
         getPosition: () => pos,
         getAngle: (d) => -(d.trackDeg ?? 0),
         getSize: PLANE_SIZE * 1.35,
