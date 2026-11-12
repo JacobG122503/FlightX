@@ -28,8 +28,6 @@ interface Props {
   onView: (view: TripView) => void;
 }
 
-const PRESETS = [1, 10, 100, 1000];
-
 const STATUS_LABEL: Record<SimTripSummary['status'], string> = {
   scheduled: 'Boarding',
   taxiing: 'Taxiing',
@@ -428,13 +426,6 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
                     <button className="btn btn--primary" onClick={spawn} disabled={busy}>
                       Spawn {count.toLocaleString()}
                     </button>
-                  </div>
-                  <div className="presets">
-                    {PRESETS.map((p) => (
-                      <button key={p} className={count === p ? 'is-active' : ''} onClick={() => setCount(p)}>
-                        {p.toLocaleString()}
-                      </button>
-                    ))}
                   </div>
                   <p className="muted add-panel__hint">Random flights on real routes and connections, pushing back within a minute.</p>
                 </>
