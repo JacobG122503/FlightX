@@ -147,12 +147,17 @@ function FlightApp() {
     map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(7, map.getZoom()) });
   }, [map, selectedState]);
 
+  const lastSavedView = useRef(0);
   const updateView = useCallback((m: MaplibreMap) => {
     const z = m.getZoom();
     const c = m.getCenter();
     const next: MapView = { bounds: toBounds(m), zoom: z };
     setView((prev) => (viewChanged(prev, next) ? next : prev));
-    saveStored({ lat: c.lat, lng: c.lng, zoom: z });
+    // Follow mode moves the camera every frame; remember the view at most every 2 s.
+    if (Date.now() - lastSavedView.current > 2000) {
+      lastSavedView.current = Date.now();
+      saveStored({ lat: c.lat, lng: c.lng, zoom: z });
+    }
   }, []);
 
   const select = useCallback((id: string | null) => {
@@ -271,6 +276,7 @@ function FlightApp() {
           attributionControl={false}
           onLoad={(e) => updateView(e.target)}
           onMoveEnd={(e) => updateView(e.target)}
+          onDragStart={() => setFollow(false)}
           // Quarter-step zoom is enough for icon sizing and avoids re-rendering on every frame.
           onZoom={(e) => setZoom(Math.round(e.viewState.zoom * 4) / 4)}
         >

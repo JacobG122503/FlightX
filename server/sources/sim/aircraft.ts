@@ -68,6 +68,7 @@ export const AIRCRAFT: Record<string, AircraftType> = Object.fromEntries(
     T('A343', 'Airbus', 'A340-300', 'heavy', 475, [33000, 39000], 7300, 'Airbus_A340'),
     T('A346', 'Airbus', 'A340-600', 'heavy', 480, [33000, 39000], 7800, 'Airbus_A340'),
     T('A359', 'Airbus', 'A350-900', 'heavy', 488, [37000, 41000], 8100, 'Airbus_A350'),
+    T('A35U', 'Airbus', 'A350-900ULR', 'heavy', 488, [37000, 43000], 9700, 'Airbus_A350'),
     T('A388', 'Airbus', 'A380-800', 'heavy', 488, [35000, 41000], 8000, 'Airbus_A380'),
     T('B712', 'Boeing', '717-200', 'jet', 438, [33000, 37000], 1400, 'Boeing_717'),
     T('B732', 'Boeing', '737-200', 'jet', 420, [31000, 35000], 2000, 'Boeing_737_Original'),

@@ -123,6 +123,12 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
   const route = detail?.route ?? null;
   const aircraft = detail?.aircraft ?? null;
   const sim = detail?.sim ?? null;
+  // Real flights: the tracked path starting low near the origin airport gives the takeoff time.
+  const first = trail[0];
+  const liveTakeoff =
+    !sim && first && route?.plausible && (first.onGround || (first.altFt ?? 99999) < 3000) && haversineKm(first, route.origin) < 40
+      ? first.t
+      : null;
 
   // Close on Escape.
   useEffect(() => {
@@ -274,6 +280,16 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
               />
               <Row label="Phase" value={PHASE_LABEL[sim.phase]} />
               <Row
+                label={now < sim.takeoffAt ? 'Takes off' : 'Took off'}
+                value={
+                  <span data-tip={airportTimeTip(sim.takeoffAt, sim.origin.tz, sim.origin.city?.split(',')[0] ?? sim.origin.iata)}>
+                    {now < sim.takeoffAt ? '~' : ''}
+                    {timeTz(sim.takeoffAt)}
+                  </span>
+                }
+                sub={sim.origin.iata}
+              />
+              <Row
                 label="Lands"
                 value={<span data-tip={airportTimeTip(sim.landAt, sim.destination.tz, sim.destination.city?.split(',')[0] ?? sim.destination.iata)}>{timeTz(sim.landAt)}</span>}
                 sub={sim.destination.iata}
@@ -321,6 +337,9 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
               <Row label="Latitude" value={pos ? fmtCoord(pos.lat, 'N', 'S') : '—'} />
               <Row label="Longitude" value={pos ? fmtCoord(pos.lon, 'E', 'W') : '—'} />
               <Row label="Squawk" value={state.squawk ?? '—'} />
+              {!sim && liveTakeoff != null && (
+                <Row label="Took off" value={timeTz(liveTakeoff)} sub={route?.origin.iata ?? undefined} />
+              )}
               <Row label="Flown path" value={trail.length ? `${trail.length} points` : '—'} sub={trailSources.map((s) => FEED_LABEL[s] ?? s).join(' + ') || undefined} />
             </dl>
           </section>

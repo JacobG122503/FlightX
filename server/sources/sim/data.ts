@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { haversineKm, KM_PER_NM } from '../../../shared/geo';
 import type { SimAirport } from '../../../shared/sim';
+import { aircraftType } from './aircraft';
 
 export interface Airport extends SimAirport {
   /** Departing airline routes (2014 network) — a proxy for how busy the airport is. */
@@ -107,14 +108,29 @@ export function simData(): SimData {
 
   const routes = new Map<Airport, Map<Airport, RouteInfo>>();
   const routeList: { from: Airport; info: RouteInfo }[] = [];
+  const fleets = new Map(Object.entries(load<Record<string, Record<string, number>>>('fleets.json')).map(([op, types]) => [op, Object.entries(types)] as [string, [string, number][]]));
+  const maxRange = new Map<string, number>();
+  for (const [op, types] of fleets) maxRange.set(op, Math.max(0, ...types.map(([t]) => aircraftType(t)?.rangeNm ?? 0)));
+  let implausible = 0;
   for (const [si, di, ops] of load<[number, number, string][]>('routes.json')) {
     const from = airports[si];
     const to = airports[di];
+    const distance = distNm(from, to);
     const operators = new Map<string, string>();
     for (const op of ops.split('|')) {
       const [marketing, operator] = op.split(':');
-      if (marketing) operators.set(marketing, operator || marketing);
+      if (!marketing) continue;
+      // Community data has a few junk ultra-long routes (e.g. small island carriers "flying"
+      // 8,500 NM). Over 7,000 NM, drop a route when the operator's fleet is nowhere near that range.
+      // (Fleet lists are incomplete for some airlines, so shorter routes aren't checked.)
+      const range = maxRange.get(operator || marketing) ?? 0;
+      if (distance > 7000 && distance > range * 1.35) {
+        implausible++;
+        continue;
+      }
+      operators.set(marketing, operator || marketing);
     }
+    if (!operators.size) continue;
     const info: RouteInfo = { to, airlines: [...operators.keys()], operators };
     let m = routes.get(from);
     if (!m) routes.set(from, (m = new Map()));
@@ -148,11 +164,11 @@ export function simData(): SimData {
     places,
     regions,
     countries,
-    fleets: new Map(Object.entries(load<Record<string, Record<string, number>>>('fleets.json')).map(([op, types]) => [op, Object.entries(types)])),
+    fleets,
     registry: new Map(Object.entries(load<Record<string, [string, string, string][]>>('registry.json'))),
     flyable: airports.filter((a) => a.weight > 0),
   };
-  console.log(`[sim] loaded ${airports.length} airports, ${routeList.length} routes, ${airlines.size} airlines`);
+  console.log(`[sim] loaded ${airports.length} airports, ${routeList.length} routes (${implausible} implausible skipped), ${airlines.size} airlines`);
   return cached;
 }
 

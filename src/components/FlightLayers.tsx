@@ -4,6 +4,7 @@ import type { PickingInfo } from '@deck.gl/core';
 import { DeckOverlay } from './DeckOverlay';
 import { HoverCard } from './HoverCard';
 import { useNow } from '../hooks/useNow';
+import { serverNow } from '../api';
 import { buildFlightLayers, buildRoute, buildTrail, LABEL_MAX_COUNT, LABEL_MIN_ZOOM, type ColorMode } from '../lib/layers';
 import { extrapolate } from '../../shared/geo';
 import { BOOM_MS, explosionLayers, onExplode, shakeMap, type Boom } from '../lib/explosion';
@@ -36,10 +37,10 @@ interface Hover {
 /** React glue between app state and the deck.gl overlay. Render as a child of <Map>. */
 export function FlightLayers({ flights, selectedId, selectedState, route, trail, zoom, follow, hideOthers, colorMode, onSelect }: Props) {
   const map = useMap().current;
-  const now = useNow(FRAME_MS);
+  // While following, update every frame so the camera and plane move together smoothly.
+  const now = useNow(follow ? 0 : FRAME_MS);
   const [hover, setHover] = useState<Hover | null>(null);
   const pointerRef = useRef(false);
-  const lastPan = useRef(0);
 
   // Crash explosions: animate at full frame rate while any are playing.
   const [booms, setBooms] = useState<Boom[]>([]);
@@ -77,11 +78,18 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
   const airports = useMemo<Airport[]>(() => (route?.plausible ? [route.origin, route.destination] : []), [route]);
   const selectedPos = selectedState ? extrapolate(selectedState, now) : null;
 
-  // Follow mode: keep the selected aircraft centred.
+  // Follow mode: glide to the plane once, then lock the camera onto it every frame.
+  const followSince = useRef(0);
   useEffect(() => {
-    if (!map || !follow || !selectedPos || now - lastPan.current < 1000) return;
-    lastPan.current = now;
-    map.easeTo({ center: [selectedPos.lon, selectedPos.lat], duration: 900, easing: (t) => t });
+    if (!map || !follow || !selectedState) return;
+    const p = extrapolate(selectedState, serverNow());
+    followSince.current = performance.now();
+    map.easeTo({ center: [p.lon, p.lat], duration: 600 });
+    // Only when Follow is switched on (or a different plane is followed).
+  }, [map, follow, selectedState?.id]);
+  useEffect(() => {
+    if (!map || !follow || !selectedPos || performance.now() - followSince.current < 650) return;
+    map.jumpTo({ center: [selectedPos.lon, selectedPos.lat] });
   }, [map, follow, selectedPos, now]);
 
   const onHover = useCallback(
