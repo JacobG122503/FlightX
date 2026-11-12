@@ -186,7 +186,9 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
-  const [count, setCount] = useState(1);
+  /** Typed as text so the box can be cleared while typing; empty or invalid means 1. */
+  const [countText, setCountText] = useState('1');
+  const count = Math.max(1, Math.floor(Number(countText.replace(/[^0-9]/g, '')) || 1));
   const [groupSize, setGroupSize] = useState(1);
   const [custom, setCustom] = useState<Record<string, CustomPassenger[]>>({});
   const [editing, setEditing] = useState<ItineraryOption | null>(null);
@@ -299,7 +301,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
     try {
       const { created } = await api.sim.spawn(count);
       setMessage({ kind: 'ok', text: `Spawned ${created.toLocaleString()} random flight${created === 1 ? '' : 's'} — they push back within the next minute.` });
-      setCount(1); // reset for next time, like the trip form after a flight starts
+      setCountText('1'); // reset for next time, like the trip form after a flight starts
       setAdding(false);
       onChanged();
     } catch (err) {
@@ -409,17 +411,19 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
                 <>
                   <div className="spawn">
                     <div className="stepper">
-                      <button onClick={() => setCount((c) => Math.max(1, c - 1))} aria-label="Fewer">
+                      <button onClick={() => setCountText(String(Math.max(1, count - 1)))} aria-label="Fewer">
                         −
                       </button>
                       <input
-                        type="number"
-                        min={1}
-                        max={10000}
-                        value={count}
-                        onChange={(e) => setCount(Math.max(1, Math.min(10000, Math.floor(Number(e.target.value) || 1))))}
+                        type="text"
+                        inputMode="numeric"
+                        value={countText}
+                        onChange={(e) => setCountText(e.target.value.replace(/[^0-9]/g, ''))}
+                        onFocus={(e) => e.target.select()}
+                        onKeyDown={(e) => e.key === 'Enter' && !busy && void spawn()}
+                        aria-label="How many random flights"
                       />
-                      <button onClick={() => setCount((c) => Math.min(10000, c + 1))} aria-label="More">
+                      <button onClick={() => setCountText(String(count + 1))} aria-label="More">
                         +
                       </button>
                     </div>

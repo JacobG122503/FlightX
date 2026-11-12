@@ -53,7 +53,7 @@ Without VS Code: `npm run dev` does the same thing.
 - **Your own passengers:** on any option, **Add passengers** lets you name people (🎲 for a random one)
   and click seats to place them. Empty seats fill with random passengers (charters carry exactly your
   group size).
-- **Spawn random flights:** 1 to 10,000 at a time (25,000 active max). They fly random real
+- **Spawn random flights:** any number at a time, no limit. They fly random real
   routes and connections.
 
 ## How the simulation works
@@ -117,7 +117,7 @@ To refresh the routes: clone `https://github.com/vradarserver/standing-data`, do
 
 Saving (in `~/Library/Application Support/FlightX/`):
 
-- `simulation.json` — active flight plans and settings (small; ~12 MB at the 25,000-trip maximum).
+- `simulation.json` — active flight plans and settings (about 0.5 MB per 1,000 active trips).
 - `flight-log.jsonl` — every landed/crashed flight, one per line, only ever appended to.
 - Both together are capped at **500 MB**; past that, the oldest log entries are deleted first
   (down to 450 MB). That's roughly 1.4 million flights of history.

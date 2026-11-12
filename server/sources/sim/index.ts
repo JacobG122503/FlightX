@@ -16,8 +16,6 @@ import { findOptions, randomOptions, timerOption } from './planner';
 import { SimStore, type LiveLeg, type StoredTrip } from './store';
 import { Rng } from './random';
 
-const MAX_SPAWN = 10_000;
-const MAX_ACTIVE_TRIPS = 25_000;
 const PLAN_TTL_MS = 30 * 60_000;
 /** Flights made from a length of time: 1 minute to 3 days. */
 const TIMER_MIN = 1;
@@ -189,16 +187,9 @@ export class SimSource {
     return { query, fromLabel: from.label, toLabel: to.label, options, error: null };
   }
 
-  private ensureCapacity(n: number) {
-    if (this.store.tripCount + n > MAX_ACTIVE_TRIPS) {
-      throw new Error(`That would make ${this.store.tripCount + n} active trips; the limit is ${MAX_ACTIVE_TRIPS.toLocaleString()}.`);
-    }
-  }
-
   book(optionId: string, passengers: CustomPassenger[] = []): SimTripSummary {
     const cached = this.planCache.get(optionId);
     if (!cached) throw new Error('That option has expired — search again.');
-    this.ensureCapacity(cached.opt.aircraftCount);
     const custom = passengers.filter((p) => p && typeof p.name === 'string').slice(0, 5000);
     const [trip] = this.store.add([cached.opt], { random: false, query: cached.query, startAt: Date.now(), passengers: custom });
     return this.summary(trip, Date.now());
@@ -311,7 +302,6 @@ export class SimSource {
   timer(minutes: number): TimerResponse {
     const target = Math.round(Math.max(TIMER_MIN, Math.min(TIMER_MAX, Number(minutes) || 0)));
     if (!Number.isFinite(Number(minutes)) || Number(minutes) <= 0) throw new Error('Pick a length of time for the flight.');
-    this.ensureCapacity(1);
     const now = Date.now();
     const opt = timerOption(target, now, new Rng());
     if (!opt) throw new Error('Couldn’t find a flight for that time — try another.');
@@ -324,8 +314,7 @@ export class SimSource {
   }
 
   spawn(count: number): number {
-    const n = Math.max(1, Math.min(MAX_SPAWN, Math.floor(count)));
-    this.ensureCapacity(n);
+    const n = Math.max(1, Math.floor(Number(count) || 1));
     const opts = randomOptions(n, Date.now(), new Rng());
     return this.store.add(opts, { random: true, query: null }).length;
   }
