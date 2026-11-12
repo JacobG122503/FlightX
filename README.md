@@ -37,8 +37,7 @@ Without VS Code: `npm run dev` does the same thing.
 
 | What                    | Source                                                                 |
 | ----------------------- | ---------------------------------------------------------------------- |
-| Satellite imagery       | Esri World Imagery (+ Esri borders/places overlay)                     |
-| Dark / light maps       | OpenFreeMap (OpenStreetMap data)                                       |
+| Satellite imagery       | Esri World Imagery; borders & place names from OpenFreeMap (© OpenStreetMap contributors) |
 | World-wide positions    | OpenSky Network                                                        |
 | Real-time local traffic | adsb.fi (1 request/s, no daily cap), adsb.lol as backup (500/day)      |
 | Flown path              | OpenSky tracks + positions FlightX has seen                            |
