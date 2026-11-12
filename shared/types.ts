@@ -44,6 +44,8 @@ export interface FlightState {
   ts: number;
   feed: FeedId;
   emergency: string | null;
+  /** Simulated flights: true if randomly spawned, false if you sent it. */
+  simRandom?: boolean;
 }
 
 export interface Bounds {

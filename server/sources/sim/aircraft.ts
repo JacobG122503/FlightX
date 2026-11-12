@@ -113,6 +113,10 @@ export const AIRCRAFT: Record<string, AircraftType> = Object.fromEntries(
     T('AT45', 'ATR', '42-500', 'light', 260, [17000, 23000], 700, 'ATR_42', TP),
     T('SF34', 'Saab', '340', 'light', 250, [17000, 25000], 900, 'Saab_340', TP),
     T('B190', 'Beechcraft', '1900D', 'light', 270, [16000, 25000], 600, 'Beechcraft_1900', TP),
+    T('C172', 'Cessna', '172 Skyhawk', 'light', 122, [5500, 8500], 640, 'Cessna_172', { climb1: 700, climb2: 500, descent: 500 }),
+    T('SR22', 'Cirrus', 'SR22', 'light', 183, [9500, 13500], 1000, 'Cirrus_SR22', { climb1: 1000, climb2: 700, descent: 700 }),
+    T('BE20', 'Beechcraft', 'King Air 200', 'light', 289, [25000, 29000], 1500, 'Beechcraft_Super_King_Air', { climb1: 2000, climb2: 1300, descent: 1500 }),
+    T('PC12', 'Pilatus', 'PC-12', 'light', 280, [24000, 28000], 1800, 'Pilatus_PC-12', { climb1: 1500, climb2: 1100, descent: 1500 }),
     T('E55P', 'Embraer', 'Phenom 300', 'jet', 450, [41000, 45000], 1900, 'Embraer_Phenom_300'),
     T('CL35', 'Bombardier', 'Challenger 350', 'jet', 465, [41000, 45000], 3200, 'Bombardier_Challenger_300'),
     T('GLF6', 'Gulfstream', 'G650ER', 'jet', 488, [41000, 47000], 7500, 'Gulfstream_G650'),
@@ -157,7 +161,7 @@ export function typeFromFleet(fleet: [string, number][] | undefined, distanceNm:
     .filter((x): x is { t: AircraftType; count: number } => x.t !== null && x.t.rangeNm >= distanceNm * 1.1);
   if (!usable.length) return fallbackType(distanceNm, rng);
   const suit = (t: AircraftType) =>
-    (t.kind === 'heavy' && distanceNm < 1200 ? 0.12 : 1) * (t.regional && distanceNm > 1100 ? 0.3 : 1) * (t.kind === 'light' && distanceNm > 500 ? 0.2 : 1);
+    (t.kind === 'heavy' ? (distanceNm < 500 ? 0.001 : distanceNm < 1500 ? 0.04 : 1) : 1) * (t.regional && distanceNm > 1100 ? 0.3 : 1) * (t.kind === 'light' && distanceNm > 500 ? 0.2 : 1);
   return rng.weighted(usable, (x) => x.count * suit(x.t)).t;
 }
 
@@ -171,7 +175,7 @@ export function cruiseAltitude(t: AircraftType, trackDeg: number, distanceNm: nu
   const eastbound = trackDeg >= 0 && trackDeg < 180;
   const thousands = ft / 1000;
   if (eastbound !== (thousands % 2 === 1)) ft -= 1000;
-  return Math.max(ft, 9000);
+  return Math.max(ft, Math.min(lo, 9000) - 1000);
 }
 
 // ── Registrations and transponder addresses by country ─────────────────────

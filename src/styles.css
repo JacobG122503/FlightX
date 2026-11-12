@@ -1522,17 +1522,23 @@ pre,
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 5px;
-  background: rgba(56, 189, 248, 0.14);
-  color: #bae6fd;
   flex: none;
 }
+/* Same colours as the planes on the map: green = yours, yellow = random. */
+.origin-badge.is-mine {
+  background: rgba(60, 179, 113, 0.2);
+  color: #86efac;
+}
 .origin-badge.is-random {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--muted);
+  background: rgba(255, 214, 10, 0.16);
+  color: #fde047;
 }
 .log__item {
   border-bottom: 1px solid var(--border);
-  padding: 4px 2px 7px;
+  border-left: 3px solid transparent;
+  padding: 5px 4px 7px 9px;
+  cursor: pointer;
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1570,6 +1576,40 @@ pre,
 }
 .outcome--crashed {
   color: #fca5a5;
+}
+.log__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.log__item.is-mine {
+  border-left-color: #3cb371;
+}
+.log__item.is-random {
+  border-left-color: rgba(255, 214, 10, 0.75);
+}
+.modal--log {
+  width: min(560px, 100%);
+}
+.log-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.log-details__badges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.log-details__route {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.log-details__arrow {
+  font-size: 20px;
+  color: var(--muted);
 }
 .log__item.is-crashed {
   background: rgba(248, 113, 113, 0.05);
@@ -1989,6 +2029,218 @@ pre,
 .pax-editor__actions {
   display: flex;
   gap: 8px;
+}
+
+/* ── Hover popups (airport codes, times) ───────────────────────────────── */
+
+.tip {
+  position: fixed;
+  z-index: 100;
+  transform: translate(-50%, calc(-100% - 6px));
+  pointer-events: none;
+  max-width: 300px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(8, 11, 18, 0.96);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.35;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.tip--below {
+  transform: translate(-50%, 6px);
+}
+.code {
+  cursor: help;
+  border-bottom: 1px dotted rgba(141, 153, 171, 0.6);
+}
+[data-tip] {
+  cursor: help;
+}
+
+/* ── Simulation sidebar: collapsible sections, sort, confirm ────────────── */
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.section-toggle .section__meta {
+  margin-left: 2px;
+}
+.chev {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.chev.is-open {
+  transform: rotate(90deg);
+}
+.view-select {
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 0 6px;
+  outline: none;
+  cursor: pointer;
+}
+.link-btn--danger {
+  align-self: flex-start;
+  margin-left: 0;
+  color: #fca5a5;
+}
+.btn--danger-solid {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.btn--danger-solid:hover {
+  background: #ef4444;
+}
+.modal--small {
+  width: min(420px, 100%);
+}
+.modal--small .modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal--small p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* ── Things you missed ──────────────────────────────────────────────────── */
+
+.modal--missed {
+  width: min(640px, 100%);
+}
+.modal--missed .modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.missed-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.missed-stats > div {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.missed-stats strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.missed-stats span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.missed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+.missed-list li {
+  display: grid;
+  grid-template-columns: 90px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.missed-list li.is-clickable {
+  cursor: pointer;
+}
+.missed-list li.is-clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.missed-list li.is-mine {
+  border-left: 3px solid #3cb371;
+}
+.missed-list li.is-random {
+  border-left: 3px solid rgba(255, 214, 10, 0.75);
+}
+.missed-list__route {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.missed-list {
+  max-height: 300px;
+}
+.missed-list__bar {
+  width: 80px;
+}
+.missed-list__time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.missed-note {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ── Simulation plane key ───────────────────────────────────────────────── */
+
+.legend--sim {
+  width: auto;
+}
+.legend__swatches {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+}
+.legend__swatches span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend__swatches i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.5);
 }
 
 /* ── Edge tabs: collapsed panels as small arrows on the window's left edge ── */

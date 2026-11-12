@@ -6,12 +6,12 @@
 import path from 'node:path';
 import { containsFn } from '../../lib/bounds';
 import type { Airport as RouteAirport, Bounds, FlightDetailResponse, FlightListResponse, FlightState, HealthResponse, TrackResponse } from '../../../shared/types';
-import type { CrashResponse, CustomPassenger, ItineraryOption, PassengerManifest, PlanResponse, SeatMap, SimFlightInfo, SimStatusResponse, SimTripSummary } from '../../../shared/sim';
+import type { CrashResponse, CustomPassenger, ItineraryOption, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimFlightInfo, SimStatusResponse, SimTripSummary, TripView } from '../../../shared/sim';
 import { mapFor, passengerCount, passengerList } from './passengers';
 import { aircraftType as typeInfo } from './aircraft';
 import { person } from './names';
 import type { FlightSource } from '../types';
-import { simData, toSimAirport, type Airport } from './data';
+import { simData, toSimAirport, distNm, type Airport } from './data';
 import { evaluate, sampleTrack } from './profile';
 import { parseTripQuery, resolvePlace } from './geocode';
 import { findOptions, randomOptions } from './planner';
@@ -71,6 +71,7 @@ export class SimSource implements FlightSource {
       ts: now,
       feed: 'sim',
       emergency: null,
+      simRandom: l.trip.random,
     };
   }
 
@@ -78,6 +79,7 @@ export class SimSource implements FlightSource {
   async list(bounds: Bounds): Promise<FlightListResponse> {
     const now = Date.now();
     this.store.advance(now);
+    this.store.touch(now);
     const inView = containsFn(bounds, 0.2);
     const flights: FlightState[] = [];
     for (const l of this.store.active(now)) {
@@ -231,6 +233,24 @@ export class SimSource implements FlightSource {
     };
   }
 
+  /** Everything known about a finished flight in the log. */
+  logDetails(entryId: string): LogFlightDetails | null {
+    const e = this.store.log.find((x) => x.id === entryId);
+    if (!e) return null;
+    const d = simData();
+    const from = d.byIata.get(e.from) ?? null;
+    const to = d.byIata.get(e.to) ?? null;
+    const t = typeInfo(e.aircraftType);
+    return {
+      entry: e,
+      from: from ? toSimAirport(from) : null,
+      to: to ? toSimAirport(to) : null,
+      aircraftName: t ? `${t.manufacturer} ${t.name}` : e.aircraftType,
+      airline: e.airline,
+      distanceNm: from && to ? Math.round(distNm(from, to)) : null,
+    };
+  }
+
   /** Passengers of a finished flight from the flight log (regenerated from its seed). */
   logPassengers(entryId: string): PassengerManifest | null {
     const e = this.store.log.find((x) => x.id === entryId);
@@ -251,6 +271,31 @@ export class SimSource implements FlightSource {
       seatMap: mapFor(input),
       passengers: passengerList(input),
       delivered: e.outcome === 'landed',
+    };
+  }
+
+  /** What happened between the last time FlightX was open and this launch. */
+  missed(): MissedSummary {
+    const store = this.store;
+    store.advance(Date.now());
+    const since = store.previousActiveAt;
+    const empty: MissedSummary = { awayMs: 0, since, landed: 0, randomLanded: 0, bookedLanded: [], passengersDelivered: 0, stillFlying: [], stillFlyingTotal: 0, stillFlyingYours: 0 };
+    if (since == null) return empty;
+    const m = store.missedStats;
+    const now = Date.now();
+    const trips = store.allTrips();
+    const finalArrive = (t: StoredTrip) => store.liveLeg(t, t.legs.length - 1).profile.arriveAt;
+    const ordered = [...trips].sort((a, b) => Number(a.random) - Number(b.random) || finalArrive(a) - finalArrive(b));
+    return {
+      awayMs: store.loadedAt - since,
+      since,
+      landed: m.landed,
+      randomLanded: m.random,
+      bookedLanded: [...m.booked].sort((a, b) => b.at - a.at).slice(0, 30),
+      passengersDelivered: m.passengers,
+      stillFlying: ordered.slice(0, 60).map((t) => this.summary(t, now)),
+      stillFlyingTotal: trips.length,
+      stillFlyingYours: trips.filter((t) => !t.random).length,
     };
   }
 
@@ -315,19 +360,43 @@ export class SimSource implements FlightSource {
     };
   }
 
-  status(): SimStatusResponse {
+  status(view: TripView = 'newest'): SimStatusResponse {
     const now = Date.now();
     this.store.advance(now);
+    this.store.touch(now);
     const trips = this.store.allTrips();
-    const recent = trips.sort((a, b) => b.createdAt - a.createdAt).slice(0, 150);
+    const finalArrive = (t: StoredTrip) => this.store.liveLeg(t, t.legs.length - 1).profile.arriveAt;
+    const shown =
+      view === 'booked' ? trips.filter((t) => !t.random) : view === 'random' ? trips.filter((t) => t.random) : trips;
+    const sorted =
+      view === 'newest'
+        ? shown.sort((a, b) => b.createdAt - a.createdAt)
+        : view === 'left-desc'
+          ? shown.sort((a, b) => finalArrive(b) - finalArrive(a))
+          : shown.sort((a, b) => finalArrive(a) - finalArrive(b));
+    const recent = sorted.slice(0, 150);
     const activeFlights = [...this.store.active(now)].length;
     const log = this.store.log;
+    const logSlice = log.slice(-300).reverse();
+    const d = simData();
+    const airports: SimStatusResponse['airports'] = {};
+    const codes = new Set<string>();
+    for (const t of recent) for (const l of t.legs) codes.add(l.from).add(l.to);
+    for (const e of logSlice) codes.add(e.from).add(e.to);
+    for (const code of codes) {
+      const a = d.byIata.get(code);
+      if (!a) continue;
+      const region = d.regions.get(a.region)?.name;
+      const country = d.countries.get(a.country)?.name ?? a.country;
+      airports[code] = { name: a.name, place: [a.city?.split(',')[0], region, country].filter(Boolean).join(', '), tz: a.tz };
+    }
     return {
+      airports,
       trips: recent.map((t) => this.summary(t, now)),
       tripCount: trips.length,
       activeFlights,
-      log: log.slice(-300).reverse(),
-      logTotal: log.length,
+      log: logSlice,
+      logTotal: this.store.logTotal,
       serverTime: now,
     };
   }

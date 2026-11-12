@@ -1,4 +1,4 @@
-import type { CrashResponse, CustomPassenger, PassengerManifest, PlanResponse, SeatMap, SimStatusResponse, SimTripSummary } from '../shared/sim';
+import type { CrashResponse, CustomPassenger, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimStatusResponse, SimTripSummary, TripView } from '../shared/sim';
 import type {
   Bounds,
   FlightDetailResponse,
@@ -53,11 +53,13 @@ export const api = {
     send: (query: string) => post<{ plan: PlanResponse; trip: SimTripSummary | null }>('/api/sim/send', { query }),
     book: (optionId: string, passengers: CustomPassenger[] = []) => post<{ trip: SimTripSummary }>('/api/sim/book', { optionId, passengers }),
     passengers: (id: string) => get<PassengerManifest>(`/api/sim/flights/${encodeURIComponent(id)}/passengers`),
+    logDetails: (entryId: string) => get<LogFlightDetails>(`/api/sim/log/${encodeURIComponent(entryId)}`),
     logPassengers: (entryId: string) => get<PassengerManifest>(`/api/sim/log/${encodeURIComponent(entryId)}/passengers`),
     seatMap: (type: string, charter: boolean) => get<SeatMap>(`/api/sim/seatmap/${encodeURIComponent(type)}?charter=${charter ? 1 : 0}`),
     randomPerson: () => get<{ name: string; age: number }>('/api/sim/random-person'),
     spawn: (count: number) => post<{ created: number }>('/api/sim/spawn', { count }),
-    status: () => get<SimStatusResponse>('/api/sim/status'),
+    status: (view: TripView = 'newest') => get<SimStatusResponse>(`/api/sim/status?view=${view}`),
+    missed: () => get<MissedSummary>('/api/sim/missed'),
     crash: (id: string) => post<CrashResponse>(`/api/sim/flights/${encodeURIComponent(id)}/crash`, {}),
     clear: () => post<{ removed: number }>('/api/sim/clear', {}),
   },

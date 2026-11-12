@@ -7,7 +7,7 @@
 import { context } from 'esbuild';
 import { createServer } from 'vite';
 import { spawn } from 'node:child_process';
-import electronPath from 'electron';
+import { brandedElectron } from './branded-electron.mjs';
 import { mainBuildOptions } from './electron-build.mjs';
 
 const API_PORT = process.env.PORT ?? '8787';
@@ -25,11 +25,14 @@ delete env.ELECTRON_RUN_AS_NODE;
 delete env.NODE_OPTIONS;
 delete env.VSCODE_INSPECTOR_OPTIONS;
 
+/** Electron runtime branded as "FlightX" with the plane icon (macOS Dock / menu bar). */
+const electronBinary = brandedElectron();
+
 let child = null;
 let restarting = false;
 
 function launch() {
-  child = spawn(electronPath, ['.'], { stdio: 'inherit', env });
+  child = spawn(electronBinary, ['.'], { stdio: 'inherit', env });
   child.on('exit', (code) => {
     if (restarting) return;
     // Window closed / app quit → stop the dev session.

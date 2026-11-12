@@ -4,7 +4,7 @@ import type { PickingInfo } from '@deck.gl/core';
 import { DeckOverlay } from './DeckOverlay';
 import { HoverCard } from './HoverCard';
 import { useNow } from '../hooks/useNow';
-import { buildFlightLayers, buildRoute, buildTrail, LABEL_MAX_COUNT, LABEL_MIN_ZOOM } from '../lib/layers';
+import { buildFlightLayers, buildRoute, buildTrail, LABEL_MAX_COUNT, LABEL_MIN_ZOOM, type ColorMode } from '../lib/layers';
 import { extrapolate } from '../../shared/geo';
 import { BOOM_MS, explosionLayers, onExplode, shakeMap, type Boom } from '../lib/explosion';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
@@ -22,6 +22,8 @@ interface Props {
   follow: boolean;
   /** Show only the selected aircraft. */
   hideOthers: boolean;
+  /** Altitude colours (live) or ground/random/yours colours (simulation). */
+  colorMode: ColorMode;
   onSelect: (id: string | null) => void;
 }
 
@@ -32,7 +34,7 @@ interface Hover {
 }
 
 /** React glue between app state and the deck.gl overlay. Render as a child of <Map>. */
-export function FlightLayers({ flights, selectedId, selectedState, route, trail, zoom, follow, hideOthers, onSelect }: Props) {
+export function FlightLayers({ flights, selectedId, selectedState, route, trail, zoom, follow, hideOthers, colorMode, onSelect }: Props) {
   const map = useMap().current;
   const now = useNow(FRAME_MS);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -112,12 +114,13 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
         labelsOn: zoom >= LABEL_MIN_ZOOM && flights.length <= LABEL_MAX_COUNT,
         selected: selectedState,
         selectedPos,
-        trail: buildTrail(trail, selectedState, selectedPos),
+        trail: buildTrail(trail, selectedState, selectedPos, colorMode),
         route: buildRoute(route, selectedState, selectedPos, trail.length),
         airports,
         zoom,
         now,
         onHover,
+        colorMode,
         }),
         ...explosionLayers(booms, frame, zoom),
       ],
@@ -125,7 +128,7 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
       pickingRadius: 6,
     }),
     // selectedPos is derived from selectedState + now, both listed.
-    [others, labeled, zoom, flights.length, selectedState, trail, route, airports, now, onHover, onClick, booms, frame],
+    [others, labeled, zoom, flights.length, selectedState, trail, route, airports, now, onHover, onClick, booms, frame, colorMode],
   );
 
   return (

@@ -170,7 +170,27 @@ export interface SimLogEntry {
   paxTarget?: number;
 }
 
+/** How the Active flights list is filtered/sorted. */
+export type TripView = 'newest' | 'booked' | 'random' | 'left-asc' | 'left-desc';
+
+/** What happened while FlightX was closed. */
+export interface MissedSummary {
+  awayMs: number;
+  since: number | null;
+  landed: number;
+  randomLanded: number;
+  /** Your flights that landed while you were away (newest first). */
+  bookedLanded: SimLogEntry[];
+  passengersDelivered: number;
+  /** Trips still under way — yours first, then random ones by arrival (capped). */
+  stillFlying: SimTripSummary[];
+  stillFlyingTotal: number;
+  stillFlyingYours: number;
+}
+
 export interface SimStatusResponse {
+  /** Airport details for codes shown in the sidebar (for hover popups). */
+  airports: Record<string, { name: string; place: string; tz: string | null }>;
   trips: SimTripSummary[];
   tripCount: number;
   activeFlights: number;
@@ -200,6 +220,16 @@ export interface SimFlightInfo {
   nextLeg: { flightNumber: string; from: SimAirport; to: SimAirport; departAt: number } | null;
   passengers: number;
   capacity: number;
+}
+
+/** Details of a finished (landed or crashed) flight from the flight log. */
+export interface LogFlightDetails {
+  entry: SimLogEntry;
+  from: SimAirport | null;
+  to: SimAirport | null;
+  aircraftName: string;
+  airline: string;
+  distanceNm: number | null;
 }
 
 export interface CrashResponse {

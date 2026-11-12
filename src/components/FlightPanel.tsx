@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AircraftPhoto, FlightState } from '../../shared/types';
 import type { SimPhase } from '../../shared/sim';
-import { timeAt } from '../lib/time';
+import { airportTimeTip, timeTz } from '../lib/time';
 import { api } from '../api';
 import { PassengerModal } from './passengers/PassengerModal';
 import type { SelectedFlight } from '../hooks/useFlightDetail';
@@ -168,7 +168,6 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
             {subtitle && <div className="panel__subtitle">{subtitle}</div>}
           </div>
           <div className="panel__badges">
-            {sim && <span className="badge badge--sim">Simulated</span>}
             {typeCode && <span className="badge">{typeCode}</span>}
             {reg && <span className="badge badge--muted">{reg}</span>}
           </div>
@@ -180,11 +179,11 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
           <div className="route">
             <div className="route__ends">
               <div className="route__end">
-                <div className="route__code">{route.origin.iata ?? route.origin.icao}</div>
+                <div className="route__code" data-tip={route.origin.name}>{route.origin.iata ?? route.origin.icao}</div>
                 <div className="route__city" title={route.origin.name}>{route.origin.city ?? route.origin.name}</div>
               </div>
               <div className="route__end route__end--right">
-                <div className="route__code">{route.destination.iata ?? route.destination.icao}</div>
+                <div className="route__code" data-tip={route.destination.name}>{route.destination.iata ?? route.destination.icao}</div>
                 <div className="route__city" title={route.destination.name}>{route.destination.city ?? route.destination.name}</div>
               </div>
             </div>
@@ -276,8 +275,8 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
               <Row label="Phase" value={PHASE_LABEL[sim.phase]} />
               <Row
                 label="Lands"
-                value={timeAt(sim.landAt, sim.destination.tz)}
-                sub={`${sim.destination.city?.split(',')[0] ?? sim.destination.iata} time`}
+                value={<span data-tip={airportTimeTip(sim.landAt, sim.destination.tz, sim.destination.city?.split(',')[0] ?? sim.destination.iata)}>{timeTz(sim.landAt)}</span>}
+                sub={sim.destination.iata}
               />
               <Row label="Leg" value={`${sim.legIndex + 1} of ${sim.legCount}`} sub={sim.legCount > 1 ? `to ${sim.finalDestination.iata}` : undefined} />
               <Row label="Cruise" value={`FL${Math.round(sim.cruiseFt / 100)}`} sub={`${sim.distanceNm.toLocaleString()} NM`} />
@@ -285,7 +284,11 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
                 <Row
                   label="Next flight"
                   value={sim.nextLeg.flightNumber}
-                  sub={`${sim.nextLeg.from.iata} → ${sim.nextLeg.to.iata} · ${timeAt(sim.nextLeg.departAt, sim.nextLeg.from.tz)}`}
+                  sub={
+                    <span data-tip={airportTimeTip(sim.nextLeg.departAt, sim.nextLeg.from.tz, sim.nextLeg.from.city?.split(',')[0] ?? sim.nextLeg.from.iata)}>
+                      {sim.nextLeg.from.iata} → {sim.nextLeg.to.iata} · {timeTz(sim.nextLeg.departAt)}
+                    </span>
+                  }
                 />
               )}
             </dl>

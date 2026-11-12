@@ -6,7 +6,7 @@
 import { IconLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import type { AircraftKind } from '../../shared/types';
-import { aircraftIcon, ICON_SIZE } from './icons';
+import { aircraftIcon, PLANE_SIZE } from './icons';
 import type { RGBA } from './altitude';
 
 export const BOOM_MS = 2800;
@@ -76,7 +76,7 @@ export function explosionLayers(booms: Boom[], now: number, zoom: number): Layer
     if (fall < 1) {
       planes.push({
         position: offset(b, 0, -28 * fall * fall, zoom),
-        size: ICON_SIZE[b.kind] * 1.3 * (1 - fall * 0.8),
+        size: PLANE_SIZE * 1.3 * (1 - fall * 0.8),
         angle: -b.trackDeg + fall * 540,
         boom: b,
       });

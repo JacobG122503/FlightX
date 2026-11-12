@@ -5,7 +5,7 @@
 import { IconLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension, type PathStyleExtensionProps } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { aircraftIcon, ICON_SIZE, zoomScale } from './icons';
+import { aircraftIcon, PLANE_SIZE, SIM_COLORS, zoomScale } from './icons';
 import { altitudeRgba, type RGBA } from './altitude';
 import { extrapolate, greatCircle, unwrapLongitudes, type LatLon } from '../../shared/geo';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
@@ -30,13 +30,20 @@ export interface RouteSegment {
 
 export const toPos = (p: LatLon): Position => [p.lon, p.lat];
 
+export type ColorMode = 'altitude' | 'sim';
+
+/** Simulation colour for a plane: grey on the ground, yellow if random, green if yours. */
+export const simFill = (f: FlightState) => (f.onGround ? SIM_COLORS.ground : f.simRandom ? SIM_COLORS.random : SIM_COLORS.mine);
+const hexRgba = (hex: string, a = 255): RGBA => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16), a];
+
 /** Flown path coloured by altitude, ending at the aircraft's live (extrapolated) position. */
-export function buildTrail(trail: TrackPoint[], selected: FlightState | null, selectedPos: LatLon | null): TrailPath[] {
+export function buildTrail(trail: TrackPoint[], selected: FlightState | null, selectedPos: LatLon | null, mode: ColorMode = 'altitude'): TrailPath[] {
   if (!selected || !selectedPos || trail.length === 0) return [];
   const path = trail.map((p) => [p.lon, p.lat] as Position);
-  const colors = trail.map((p) => altitudeRgba(p.altFt, p.onGround));
+  const solid = mode === 'sim' ? hexRgba(selected.simRandom ? SIM_COLORS.random : SIM_COLORS.mine) : null;
+  const colors = trail.map((p) => solid ?? altitudeRgba(p.altFt, p.onGround));
   path.push(toPos(selectedPos));
-  colors.push(altitudeRgba(selected.altFt, selected.onGround));
+  colors.push(solid ?? altitudeRgba(selected.altFt, selected.onGround));
   return [{ path: unwrapLongitudes(path), colors }];
 }
 
@@ -67,12 +74,15 @@ export interface LayerInput {
   zoom: number;
   /** Server-corrected time used for dead reckoning. */
   now: number;
+  colorMode: ColorMode;
   onHover?: (info: PickingInfo<FlightState>) => void;
 }
 
 export function buildFlightLayers(input: LayerInput): Layer[] {
-  const { others, labeled, labelsOn, selected, selectedPos, trail, route, airports, zoom, now, onHover } = input;
-  const sizeScale = zoomScale(zoom);
+  const { others, labeled, labelsOn, selected, selectedPos, trail, route, airports, zoom, now, onHover, colorMode } = input;
+  const sim = colorMode === 'sim';
+  const sizeScale = zoomScale(zoom, sim);
+  const fill = (d: FlightState) => (sim ? simFill(d) : undefined);
   const layers: Layer[] = [];
 
   if (trail.length) {
@@ -121,10 +131,10 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
     new IconLayer<FlightState>({
       id: 'aircraft',
       data: others,
-      getIcon: (d) => aircraftIcon(d.kind, d.altFt, d.onGround),
+      getIcon: (d) => aircraftIcon(d.kind, d.altFt, d.onGround, false, fill(d)),
       getPosition: (d) => toPos(extrapolate(d, now)),
       getAngle: (d) => -(d.trackDeg ?? 0),
-      getSize: (d) => ICON_SIZE[d.kind],
+      getSize: PLANE_SIZE,
       sizeScale,
       sizeUnits: 'pixels',
       pickable: true,
@@ -132,7 +142,7 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
       highlightColor: [255, 255, 255, 80],
       alphaCutoff: 0.05,
       onHover,
-      updateTriggers: { getPosition: now },
+      updateTriggers: { getPosition: now, getIcon: colorMode },
     }),
   );
 
@@ -208,10 +218,10 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
       new IconLayer<FlightState>({
         id: 'aircraft-selected',
         data,
-        getIcon: (d) => aircraftIcon(d.kind, d.altFt, d.onGround, true),
+        getIcon: (d) => aircraftIcon(d.kind, d.altFt, d.onGround, true, fill(d)),
         getPosition: () => pos,
         getAngle: (d) => -(d.trackDeg ?? 0),
-        getSize: (d) => ICON_SIZE[d.kind] * 1.35,
+        getSize: PLANE_SIZE * 1.35,
         sizeScale: Math.max(0.9, sizeScale),
         sizeUnits: 'pixels',
         pickable: true,

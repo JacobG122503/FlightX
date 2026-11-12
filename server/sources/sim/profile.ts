@@ -69,10 +69,11 @@ export function buildProfile(opts: {
   // Lower the cruise altitude until climb + descent fit comfortably in the distance.
   const segments = (cruiseFt: number) => {
     const c1Top = Math.min(10000, cruiseFt);
-    const c1 = { min: Math.max(0, c1Top - from.elevFt) / type.climb1 + 0.75, gs: type.regional && type.kind === 'light' ? 180 : 220 };
-    const c2 = { min: Math.max(0, cruiseFt - c1Top) / type.climb2, gs: (290 + cruiseGs) / 2 };
-    const ds = { min: Math.max(0, cruiseFt - topOfApproach) / type.descent, gs: (cruiseGs + 250) / 2 };
-    const ap = { min: APPROACH_FT / APPROACH_FPM, gs: APPROACH_KT };
+    // Speeds never exceed what the type can do (matters for slow piston aircraft).
+    const c1 = { min: Math.max(0, c1Top - from.elevFt) / type.climb1 + 0.75, gs: Math.min(type.kind === 'light' ? 180 : 220, cruiseGs * 0.8) };
+    const c2 = { min: Math.max(0, cruiseFt - c1Top) / type.climb2, gs: Math.min((290 + cruiseGs) / 2, cruiseGs * 0.9) };
+    const ds = { min: Math.max(0, cruiseFt - topOfApproach) / type.descent, gs: Math.min((cruiseGs + 250) / 2, cruiseGs * 1.05) };
+    const ap = { min: Math.min(APPROACH_FT, Math.max(1000, cruiseFt - to.elevFt)) / APPROACH_FPM, gs: Math.min(APPROACH_KT, type.cruiseKt * 0.7) };
     const nm = (p: { min: number; gs: number }) => (p.min / 60) * p.gs;
     return { c1Top, c1, c2, ds, ap, used: nm(c1) + nm(c2) + nm(ds) + nm(ap), nm };
   };

@@ -32,7 +32,7 @@ export interface PaxInput {
   target?: number;
 }
 
-const BUSINESS_JETS = new Set(['E55P', 'CL35', 'GLF6']);
+const BUSINESS_JETS = new Set(['C172', 'SR22', 'BE20', 'PC12', 'E55P', 'CL35', 'GLF6']);
 
 export function mapFor(input: Pick<PaxInput, 'type' | 'kind' | 'privateFlight'>): SeatMap {
   return seatMap(input.type, input.kind, input.privateFlight && BUSINESS_JETS.has(input.type));

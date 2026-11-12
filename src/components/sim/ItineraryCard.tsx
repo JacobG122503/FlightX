@@ -1,5 +1,9 @@
 import type { ItineraryOption } from '../../../shared/sim';
-import { dayOffset, fmtMinutes, timeAt } from '../../lib/time';
+import type { SimAirport } from '../../../shared/sim';
+import { airportTimeTip, dayOffset, fmtMinutes, timeTz } from '../../lib/time';
+
+const place = (a: SimAirport) => a.city?.split(',')[0] ?? a.iata;
+const airportTip = (a: SimAirport) => `${a.name}${a.city ? ` — ${a.city.split(',')[0]}` : ''}`;
 
 const TAG_LABEL = { best: 'Best match', cheapest: 'Cheapest', fastest: 'Fastest' } as const;
 
@@ -15,7 +19,7 @@ interface Props {
 export function ItineraryCard({ option: o, busy, onFly, customCount, onPassengers }: Props) {
   const first = o.legs[0];
   const last = o.legs[o.legs.length - 1];
-  const plusDays = dayOffset(o.departAt, first.from.tz, o.arriveAt, last.to.tz);
+  const plusDays = dayOffset(o.departAt, null, o.arriveAt, null);
   const airlines = [...new Set(o.legs.map((l) => (l.operatedBy ? `${l.airline.name} (${l.operatedBy})` : l.airline.name)))].join(' + ');
   const aircraft = [...new Set(o.legs.map((l) => l.aircraftName.replace(/^(Boeing|Airbus|Embraer|Bombardier) /, '')))].join(', ');
   const best = o.tags.includes('best');
@@ -34,8 +38,12 @@ export function ItineraryCard({ option: o, busy, onFly, customCount, onPassenger
       )}
       <div className="itin__times">
         <div>
-          <div className="itin__time">{timeAt(o.departAt, first.from.tz)}</div>
-          <div className="itin__code">{first.from.iata}</div>
+          <div className="itin__time" data-tip={airportTimeTip(o.departAt, first.from.tz, place(first.from))}>
+            {timeTz(o.departAt)}
+          </div>
+          <div className="itin__code">
+            <span className="code" data-tip={airportTip(first.from)}>{first.from.iata}</span>
+          </div>
         </div>
         <div className="itin__mid">
           <div className="itin__duration">{fmtMinutes(o.durationMin)}</div>
@@ -47,17 +55,23 @@ export function ItineraryCard({ option: o, busy, onFly, customCount, onPassenger
           <div className={`itin__stops${o.stops === 0 ? ' is-nonstop' : ''}`}>
             {o.stops === 0
               ? 'Nonstop'
-              : o.layovers
-                  .map((l) => `${l.airport.iata} ${fmtMinutes(l.minutes)}${l.fuelStop ? ' (fuel)' : ''}`)
-                  .join(' · ')}
+              : o.layovers.map((l, i) => (
+                  <span key={i}>
+                    {i > 0 && ' · '}
+                    <span className="code" data-tip={airportTip(l.airport)}>{l.airport.iata}</span> {fmtMinutes(l.minutes)}
+                    {l.fuelStop ? ' (fuel)' : ''}
+                  </span>
+                ))}
           </div>
         </div>
         <div className="itin__end">
-          <div className="itin__time">
-            {timeAt(o.arriveAt, last.to.tz)}
+          <div className="itin__time" data-tip={airportTimeTip(o.arriveAt, last.to.tz, place(last.to))}>
+            {timeTz(o.arriveAt)}
             {plusDays > 0 && <sup>+{plusDays}</sup>}
           </div>
-          <div className="itin__code">{last.to.iata}</div>
+          <div className="itin__code">
+            <span className="code" data-tip={airportTip(last.to)}>{last.to.iata}</span>
+          </div>
         </div>
       </div>
       <div className="itin__meta">

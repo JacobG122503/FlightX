@@ -129,5 +129,11 @@ To refresh the routes: clone `https://github.com/vradarserver/standing-data`, do
 `airports.csv`, `regions.csv`, `countries.csv` and OpenFlights' `airports.dat` into one folder, then run
 `node scripts/build-sim-data.mjs <that folder> <standing-data checkout>`.
 
-Saving: your actions are saved within 2 seconds; landings are saved within a minute (and on quit).
-They can always be recomputed from the stored flight plans, so nothing is lost either way.
+Saving (in `~/Library/Application Support/FlightX/`):
+
+- `simulation.json` — active flight plans and settings (small; ~12 MB at the 25,000-trip maximum).
+- `flight-log.jsonl` — every landed/crashed flight, one per line, only ever appended to.
+- Both together are capped at **500 MB**; past that, the oldest log entries are deleted first
+  (down to 450 MB). That's roughly 1.4 million flights of history.
+- Your actions are saved within 2 seconds; landings within a minute and on quit (they can always be
+  recomputed from the stored flight plans, so nothing is lost either way).

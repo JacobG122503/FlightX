@@ -80,13 +80,16 @@ export interface IconDef {
 
 const cache = new Map<string, IconDef>();
 
-/** Icon for an aircraft: shape by kind, fill colour by altitude band. */
-export function aircraftIcon(kind: AircraftKind, altFt: number | null, onGround: boolean, highlight = false): IconDef {
+/** Simulation colours: on the ground, randomly spawned, and sent by you. */
+export const SIM_COLORS = { ground: '#8b95a5', random: '#FFD60A', mine: '#3CB371' } as const;
+
+/** Icon for an aircraft: shape by kind, fill colour by altitude band (or a fixed colour). */
+export function aircraftIcon(kind: AircraftKind, altFt: number | null, onGround: boolean, highlight = false, fillOverride?: string): IconDef {
   const bucket = altitudeBucket(altFt, onGround);
-  const id = `${kind}:${bucket}:${highlight ? 1 : 0}`;
+  const id = `${kind}:${fillOverride ?? bucket}:${highlight ? 1 : 0}`;
   let icon = cache.get(id);
   if (!icon) {
-    const fill = altitudeCss(bucket < 0 ? 0 : bucket, bucket < 0);
+    const fill = fillOverride ?? altitudeCss(bucket < 0 ? 0 : bucket, bucket < 0);
     icon = {
       id,
       url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg(kind, fill, highlight))}`,
@@ -101,6 +104,9 @@ export function aircraftIcon(kind: AircraftKind, altFt: number | null, onGround:
   return icon;
 }
 
+/** Every plane is drawn the same size (before zoom scaling); only the silhouette differs. */
+export const PLANE_SIZE = 26;
+
 /** Base on-screen size in pixels for each kind (before zoom scaling). */
 export const ICON_SIZE: Record<AircraftKind, number> = {
   heavy: 32,
@@ -112,7 +118,11 @@ export const ICON_SIZE: Record<AircraftKind, number> = {
   ground: 12,
 };
 
-/** Shrinks icons when zoomed far out so the world view isn't a solid carpet of planes. */
-export function zoomScale(zoom: number): number {
+/**
+ * Icon scale by zoom. Live traffic (thousands of planes) shrinks when zoomed out so the
+ * world isn't a solid carpet; simulated planes get bigger when zoomed out so they're easy to see.
+ */
+export function zoomScale(zoom: number, sim = false): number {
+  if (sim) return Math.max(1, Math.min(1.6, 1.6 - (zoom - 2) * 0.09));
   return Math.max(0.5, Math.min(1.15, 0.45 + (zoom - 2) * 0.11));
 }

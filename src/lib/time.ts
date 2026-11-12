@@ -39,3 +39,16 @@ export function fmtMinutes(min: number): string {
   const m = Math.round(min % 60);
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
+
+/** "3:42 PM EST" — in your time zone (tz = null) or an airport's. */
+export const timeTz = (ms: number, tz: string | null = null) =>
+  formatter(tz, { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }, 'tz').format(ms);
+
+/** Your local time with zone, plus the date when it isn't today: "Nov 10, 3:42 PM EST". */
+export function localStampTz(ms: number): string {
+  const sameDay = dayKey(ms, null) === dayKey(Date.now(), null);
+  return sameDay ? timeTz(ms) : formatter(null, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }, 'dtz').format(ms);
+}
+
+/** Hover text: the same moment in the airport's own time zone. */
+export const airportTimeTip = (ms: number, tz: string | null, where: string) => `${timeTz(ms, tz)} local time in ${where}`;

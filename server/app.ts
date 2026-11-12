@@ -130,8 +130,13 @@ export function createApp(staticDir: string | null) {
       fail(res, err);
     }
   });
-  sim.get('/status', (_req, res) => {
-    res.set('Cache-Control', 'no-store').json(simSource.status());
+  sim.get('/status', (req, res) => {
+    const view = String(req.query.view ?? 'newest');
+    const allowed = ['newest', 'booked', 'random', 'left-asc', 'left-desc'] as const;
+    res.set('Cache-Control', 'no-store').json(simSource.status((allowed as readonly string[]).includes(view) ? (view as (typeof allowed)[number]) : 'newest'));
+  });
+  sim.get('/missed', (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(simSource.missed());
   });
   sim.post('/flights/:id/crash', (req, res) => {
     const result = simSource.crash(String(req.params.id).toLowerCase());
@@ -142,6 +147,11 @@ export function createApp(staticDir: string | null) {
     const m = simSource.passengers(String(req.params.id).toLowerCase());
     if (!m) res.status(404).json({ error: 'That flight isn’t running any more.' });
     else res.json(m);
+  });
+  sim.get('/log/:id', (req, res) => {
+    const details = simSource.logDetails(String(req.params.id));
+    if (!details) res.status(404).json({ error: 'Log entry not found.' });
+    else res.json(details);
   });
   sim.get('/log/:id/passengers', (req, res) => {
     const m = simSource.logPassengers(String(req.params.id));

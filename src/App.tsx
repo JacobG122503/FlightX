@@ -7,6 +7,9 @@ import { TopBar } from './components/TopBar';
 import { Legend } from './components/Legend';
 import { MapControls } from './components/MapControls';
 import { SimSidebar } from './components/sim/SimSidebar';
+import { MissedModal } from './components/sim/MissedModal';
+import { Tooltips } from './components/Tooltips';
+import { NightUpdater } from './components/NightUpdater';
 import { useSimStatus } from './hooks/useSim';
 import { explode } from './lib/explosion';
 import { useFlights, viewChanged, type MapView } from './hooks/useFlights';
@@ -16,6 +19,7 @@ import { SATELLITE_STYLE } from './lib/mapStyles';
 import { api, serverNow } from './api';
 import { extrapolate, greatCircle, normalizeLon, unwrapLongitudes } from '../shared/geo';
 import type { Bounds, FlightState, SourceId } from '../shared/types';
+import type { TripView } from '../shared/sim';
 
 // ── Remembered between runs: last view and map style. Safe if storage is unavailable. ──
 const STORAGE_KEY = 'flightx:view';
@@ -113,7 +117,8 @@ function FlightApp() {
   const { data, error, nextAt } = useFlights(view, source, visible);
   const flights = useMemo(() => (data?.flights ?? []).filter((f) => !crashed.has(f.id)), [data, crashed]);
   const selected = useFlightDetail(selectedId, source, visible);
-  const sim = useSimStatus(source === 'sim' && visible);
+  const [tripView, setTripView] = useState<TripView>('newest');
+  const sim = useSimStatus(source === 'sim' && visible, tripView);
   const simMode = source === 'sim';
 
   const selectedState = useMemo(() => {
@@ -265,6 +270,7 @@ function FlightApp() {
           // Quarter-step zoom is enough for icon sizing and avoids re-rendering on every frame.
           onZoom={(e) => setZoom(Math.round(e.viewState.zoom * 4) / 4)}
         >
+          <NightUpdater />
           <FlightLayers
             flights={flights}
             selectedId={selectedId}
@@ -274,6 +280,7 @@ function FlightApp() {
             zoom={zoom}
             follow={follow}
             hideOthers={focusOnly}
+            colorMode={simMode ? 'sim' : 'altitude'}
             onSelect={select}
           />
         </Map>
@@ -309,8 +316,12 @@ function FlightApp() {
           status={sim.status}
           onChanged={() => void sim.refresh()}
           onSelectFlight={selectSimFlight}
+          view={tripView}
+          onView={setTripView}
         />
       )}
+      {simMode && <MissedModal onSelectFlight={selectSimFlight} />}
+      <Tooltips />
 
       {selectedId && (
         <FlightPanel
@@ -330,7 +341,7 @@ function FlightApp() {
       )}
 
       <div className="bottom-left">
-        <Legend />
+        <Legend mode={simMode ? 'sim' : 'altitude'} />
       </div>
 
       <MapControls />

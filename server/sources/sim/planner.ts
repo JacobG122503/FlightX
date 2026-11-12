@@ -222,9 +222,10 @@ function airlineOption(d: SimData, path: Path, variant: { codes: string[] }, sta
 }
 
 /** Charter fleet: aircraft that can be chartered, small to huge. */
-const CHARTER_FLEET = ['E55P', 'CL35', 'GLF6', 'E75L', 'A20N', 'B38M', 'A21N', 'B752', 'B763', 'B788', 'B789', 'A359', 'B77W', 'B748', 'A388'];
+const CHARTER_FLEET = ['C172', 'SR22', 'BE20', 'PC12', 'E55P', 'CL35', 'GLF6', 'E75L', 'A20N', 'B38M', 'A21N', 'B752', 'B763', 'B788', 'B789', 'A359', 'B77W', 'B748', 'A388'];
 /** Rough charter cost per block hour (USD) by type. */
 const HOURLY: Record<string, number> = {
+  C172: 250, SR22: 650, BE20: 2800, PC12: 2600,
   E55P: 4800, CL35: 7800, GLF6: 13500, E75L: 7500, A20N: 12500, B38M: 12500, A21N: 14000, B752: 15000,
   B763: 22000, B788: 24000, B789: 26000, A359: 28000, B77W: 31000, B748: 36000, A388: 42000,
 };
@@ -233,7 +234,7 @@ const HOURLY: Record<string, number> = {
 function fuelStops(d: SimData, o: Airport, dst: Airport, type: AircraftType): Airport[] {
   const total = distNm(o, dst);
   // Airliners need proper airports for a fuel stop; business jets can use small ones.
-  const minWeight = type.kind === 'heavy' ? 30 : ['E55P', 'CL35', 'GLF6'].includes(type.icao) ? 3 : 12;
+  const minWeight = type.kind === 'heavy' ? 30 : ['C172', 'SR22', 'BE20', 'PC12', 'E55P', 'CL35', 'GLF6'].includes(type.icao) ? 3 : 12;
   let stops = Math.max(0, Math.ceil(total / (type.rangeNm * 0.85)) - 1);
   for (; stops <= 8; stops++) {
     const points: Airport[] = [o];
@@ -294,7 +295,8 @@ function charterOptions(d: SimData, o: Airport, dst: Airport, passengers: number
   }));
   const biggest = Math.max(...fleet.map((f) => f.capacity));
   const fits = fleet.filter((f) => f.capacity >= Math.min(passengers, biggest));
-  const smallest = fits.reduce((m, f) => (f.capacity < m.capacity ? f : m));
+  // Smallest cabin that fits; among equal sizes, the faster aircraft.
+  const smallest = fits.reduce((m, f) => (f.capacity < m.capacity || (f.capacity === m.capacity && f.type.cruiseKt > m.type.cruiseKt) ? f : m));
   const out = [charterOption(d, o, dst, smallest.type, passengers, start, rng, 'Sized for your group')];
   const fewerStops = fits.filter((f) => f.stops < smallest.stops).sort((a, b) => a.stops - b.stops || a.capacity - b.capacity)[0];
   if (fewerStops) out.push(charterOption(d, o, dst, fewerStops.type, passengers, start, rng, 'Fewer stops'));
@@ -360,6 +362,16 @@ export function findOptions(from: Place, to: Place, opts: { advanced: boolean; n
   const result = [...airline];
   if (o && dst) {
     const charters = charterOptions(d, o, dst, passengers, now, rng);
+    if (opts.advanced) {
+      // You said how many people are flying: the plane sized for your group is the best match,
+      // and airline tickets (seats on a shared flight) are the alternatives.
+      for (const a of airline) {
+        a.tags = a.tags.filter((t) => t !== 'best');
+        a.note = `Airline tickets: ${passengers} seat${passengers === 1 ? '' : 's'} on a scheduled flight shared with other travellers`;
+      }
+      charters[0].tags.push('best');
+      return [charters[0], ...charters.slice(1), ...airline];
+    }
     if (!airline.length) charters[0].tags.push('best');
     result.push(...charters);
   }

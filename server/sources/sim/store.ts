@@ -1,13 +1,15 @@
 /**
- * Persistent simulation state: trips (flight plans with absolute timestamps)
- * and the flight log, saved as JSON in the app's data folder.
+ * Persistent simulation state, in the app's data folder:
+ *  - simulation.json   trips (flight plans with absolute timestamps) — small, rewritten on save
+ *  - flight-log.jsonl  every landed/crashed flight — append-only (see logfile.ts)
+ * Together they're kept under MAX_SAVE_BYTES; the oldest log entries go first.
  *
  * Because every position is computed from the clock (see profile.ts), nothing
  * runs while FlightX is closed. On startup `advance()` simply notices which
  * flights have landed in the meantime and logs them with their real touchdown
  * times — so a plane sent on an 8-hour flight has 2 hours left 6 hours later.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import type { Airline } from '../../../shared/types';
@@ -18,6 +20,7 @@ import { aircraftType, fallbackType, registration, squawk, type AircraftType } f
 import { buildProfile, evaluate, type Profile } from './profile';
 import { distNm } from './data';
 import { Rng, newId } from './random';
+import { FlightLogFile } from './logfile';
 
 export interface StoredLeg {
   /** Flight id on the map = the aircraft's ICAO 24-bit address. */
@@ -55,9 +58,12 @@ export interface StoredTrip {
 }
 
 interface StoreFile {
-  version: 1;
+  version: 1 | 2;
   trips: StoredTrip[];
-  log: SimLogEntry[];
+  /** Version 1 kept the log here; it now lives in flight-log.jsonl. */
+  log?: SimLogEntry[];
+  /** Last time FlightX was open (for "Things you missed"). */
+  lastActiveAt?: number;
 }
 
 export interface LiveLeg {
@@ -70,7 +76,8 @@ export interface LiveLeg {
   profile: Profile;
 }
 
-const MAX_LOG = 50_000;
+/** Upper limit for all saved simulation data (main file + flight log). */
+export const MAX_SAVE_BYTES = 500 * 1024 * 1024;
 /** Your actions (send, spawn, crash, clear) are saved within 2 s. */
 const SAVE_SOON_MS = 2_000;
 /**
@@ -83,14 +90,34 @@ export class SimStore {
   private trips = new Map<string, StoredTrip>();
   private byFlightId = new Map<string, StoredTrip>();
   private live = new WeakMap<StoredLeg, LiveLeg>();
-  log: SimLogEntry[] = [];
+  private logFile: FlightLogFile;
+  private mainBytes = 0;
+  /** What landed between the last run and this launch (exact, however big the log is). */
+  missedStats = { landed: 0, random: 0, passengers: 0, booked: [] as SimLogEntry[] };
+  /** When FlightX was last open before this run (null on first run). */
+  previousActiveAt: number | null = null;
+  readonly loadedAt = Date.now();
+  private lastActiveAt = Date.now();
   private dirty = false;
   private saveTimer: NodeJS.Timeout | null = null;
   private saving = false;
 
   constructor(private readonly file: string) {
+    this.logFile = new FlightLogFile(path.join(path.dirname(file), 'flight-log.jsonl'), () => MAX_SAVE_BYTES - this.mainBytes);
     this.load();
-    process.on('exit', () => this.flushSync());
+    const finalSave = () => {
+      this.lastActiveAt = Date.now();
+      this.dirty = true;
+      this.flushSync();
+    };
+    process.on('exit', finalSave);
+    // Stopping from VS Code / Ctrl-C sends a signal, which skips 'exit' handlers by default.
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+      process.once(signal, () => {
+        finalSave();
+        process.exit(0);
+      });
+    }
   }
 
   // ── persistence ──────────────────────────────────────────────────────────
@@ -106,8 +133,14 @@ export class SimStore {
         else skipped++;
       }
       if (skipped) console.warn(`[sim] skipped ${skipped} saved trips that use airports no longer in the route data`);
-      this.log = data.log ?? [];
-      console.log(`[sim] restored ${this.trips.size} trips and ${this.log.length} log entries from ${this.file}`);
+      if (data.log?.length) {
+        // Older saves kept the log inside simulation.json: move it to the log file.
+        for (const e of data.log) this.logFile.add(e);
+        this.dirty = true;
+      }
+      this.previousActiveAt = data.lastActiveAt ?? null;
+      this.mainBytes = statSafe(this.file);
+      console.log(`[sim] restored ${this.trips.size} trips and ${this.logFile.total} log entries from ${path.dirname(this.file)}`);
     } catch (err) {
       const backup = `${this.file}.corrupt-${Date.now()}`;
       console.warn(`[sim] could not read ${this.file} (${String(err)}); moved it to ${backup} and starting fresh`);
@@ -120,7 +153,7 @@ export class SimStore {
   }
 
   private serialize(): string {
-    return JSON.stringify({ version: 1, trips: [...this.trips.values()], log: this.log } satisfies StoreFile);
+    return JSON.stringify({ version: 2, trips: [...this.trips.values()], lastActiveAt: this.lastActiveAt } satisfies StoreFile);
   }
 
   private saveDue = 0;
@@ -143,8 +176,11 @@ export class SimStore {
     try {
       mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.tmp`;
-      await writeFile(tmp, this.serialize());
+      const json = this.serialize();
+      await writeFile(tmp, json);
       await rename(tmp, this.file);
+      this.mainBytes = Buffer.byteLength(json);
+      await this.logFile.flush();
     } catch (err) {
       console.warn(`[sim] save failed: ${String(err)}`);
       this.dirty = true;
@@ -153,12 +189,22 @@ export class SimStore {
     }
   }
 
+  /** Records that FlightX is open right now (saved lazily). */
+  touch(now: number) {
+    if (now - this.lastActiveAt < 30_000) return;
+    this.lastActiveAt = now;
+    this.markDirty(false);
+  }
+
   /** Synchronous save on quit so nothing is lost. */
   flushSync() {
     if (!this.dirty) return;
     try {
       mkdirSync(path.dirname(this.file), { recursive: true });
-      writeFileSync(this.file, this.serialize());
+      const json = this.serialize();
+      writeFileSync(this.file, json);
+      this.mainBytes = Buffer.byteLength(json);
+      this.logFile.flushSync();
       this.dirty = false;
     } catch {
       /* best effort */
@@ -306,9 +352,33 @@ export class SimStore {
     };
   }
 
+  /** Newest log entries (in memory), oldest first. */
+  get log(): SimLogEntry[] {
+    return this.logFile.recent;
+  }
+
+  get logTotal(): number {
+    return this.logFile.total;
+  }
+
+  /** Bytes used on disk by the save data. */
+  get savedBytes(): number {
+    return this.mainBytes + this.logFile.bytes;
+  }
+
   private appendLog(entry: SimLogEntry) {
-    this.log.push(entry);
-    if (this.log.length > MAX_LOG) this.log.splice(0, this.log.length - MAX_LOG);
+    this.logFile.add(entry);
+    const since = this.previousActiveAt;
+    if (entry.outcome === 'landed' && since != null && entry.at > since && entry.at <= this.loadedAt) {
+      const m = this.missedStats;
+      m.landed++;
+      m.passengers += entry.paxCount ?? 0;
+      if (entry.random) m.random++;
+      else {
+        m.booked.push(entry);
+        if (m.booked.length > 60) m.booked.shift();
+      }
+    }
   }
 
   /** Logs every leg that has reached its gate by `now` (including while the app was closed). */
@@ -325,7 +395,7 @@ export class SimStore {
       if (trip.done >= trip.legs.length) this.unindex(trip);
     }
     if (changed) {
-      this.log.sort((a, b) => a.at - b.at);
+      this.logFile.sortRecent();
       this.markDirty(false);
     }
   }
@@ -375,5 +445,13 @@ export class SimStore {
 
   get tripCount() {
     return this.trips.size;
+  }
+}
+
+function statSafe(file: string): number {
+  try {
+    return statSync(file).size;
+  } catch {
+    return 0;
   }
 }
