@@ -17,7 +17,12 @@ async function get<T>(path: string, signal?: AbortSignal, init?: RequestInit): P
     throw new Error(message);
   }
   const data = (await res.json()) as T & { serverTime?: number };
-  if (typeof data.serverTime === 'number') clockOffsetMs = data.serverTime - Date.now();
+  // The simulator runs on this computer, so the clocks agree; only correct real skew (> 1 s).
+  // Re-syncing on every response made everything hop by the response time on each refresh.
+  if (typeof data.serverTime === 'number') {
+    const offset = data.serverTime - Date.now();
+    if (Math.abs(offset - clockOffsetMs) > 1000) clockOffsetMs = Math.abs(offset) > 1000 ? offset : 0;
+  }
   return data;
 }
 
@@ -48,6 +53,7 @@ export const api = {
     spawn: (count: number) => post<{ created: number }>('/api/sim/spawn', { count }),
     status: (view: TripView = 'newest') => get<SimStatusResponse>(`/api/sim/status?view=${view}`),
     missed: () => get<MissedSummary>('/api/sim/missed'),
+    nudge: (id: string) => post<{ departAt: number }>(`/api/sim/flights/${encodeURIComponent(id)}/nudge`, {}),
     crash: (id: string) => post<CrashResponse>(`/api/sim/flights/${encodeURIComponent(id)}/crash`, {}),
     clear: () => post<{ removed: number }>('/api/sim/clear', {}),
   },

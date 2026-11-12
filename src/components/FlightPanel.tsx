@@ -33,6 +33,8 @@ interface Props {
   onClose: () => void;
   /** Crash (delete) the aircraft. */
   onCrash: () => Promise<void>;
+  /** After a nudge: refresh the map and lists. */
+  onNudged: () => void;
 }
 
 const PHASE_LABEL: Record<SimPhase, string> = {
@@ -99,9 +101,15 @@ function Row({ label, value, sub }: { label: string; value: ReactNode; sub?: Rea
   );
 }
 
-export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFocus, onZoomTo, onClose, onCrash }: Props) {
+/** "Purdue University Airport — West Lafayette, Indiana, United States" */
+const airportTip = (a: { name: string; city: string | null; region: string | null; country: string | null }) =>
+  `${a.name} — ${[a.city, a.region !== a.city ? a.region : null, a.country].filter(Boolean).join(', ')}`;
+
+export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFocus, onZoomTo, onClose, onCrash, onNudged }: Props) {
   const [crashArmed, setCrashArmed] = useState(false);
   const [showPax, setShowPax] = useState(false);
+  const [nudging, setNudging] = useState(false);
+  const [nudgeError, setNudgeError] = useState<string | null>(null);
   useEffect(() => {
     if (!crashArmed) return;
     const t = window.setTimeout(() => setCrashArmed(false), 3000);
@@ -162,11 +170,11 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
           <div className="route">
             <div className="route__ends">
               <div className="route__end">
-                <div className="route__code" data-tip={route.origin.name}>{route.origin.iata ?? route.origin.icao}</div>
+                <div className="route__code" data-tip={airportTip(route.origin)}>{route.origin.iata ?? route.origin.icao}</div>
                 <div className="route__city" title={route.origin.name}>{route.origin.city ?? route.origin.name}</div>
               </div>
               <div className="route__end route__end--right">
-                <div className="route__code" data-tip={route.destination.name}>{route.destination.iata ?? route.destination.icao}</div>
+                <div className="route__code" data-tip={airportTip(route.destination)}>{route.destination.iata ?? route.destination.icao}</div>
                 <div className="route__city" title={route.destination.name}>{route.destination.city ?? route.destination.name}</div>
               </div>
             </div>
@@ -211,20 +219,43 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
         </div>
 
         {state && (
-          <button
-            className={`btn btn--danger crash-btn${crashArmed ? ' is-armed' : ''}`}
-            onClick={() => {
-              if (!crashArmed) setCrashArmed(true);
-              else {
-                setCrashArmed(false);
-                void onCrash();
-              }
-            }}
-          >
-            <svg viewBox="0 0 24 24"><path d="M13 2 11 8 5 5l3 6-6 2 6 2-3 6 6-3 2 6 2-6 6 3-3-6 6-2-6-2 3-6-6 3z" /></svg>
-            {crashArmed ? 'Click again to crash it 💥' : 'Crash this plane'}
-          </button>
+          <div className="panel__row">
+            <button
+              className="btn nudge-btn"
+              disabled={sim?.phase !== 'gate' || nudging}
+              title={sim?.phase === 'gate' ? 'Skip the wait: push back into the taxi queue now' : 'Only while the plane is waiting at its gate'}
+              onClick={async () => {
+                setNudging(true);
+                setNudgeError(null);
+                try {
+                  await api.sim.nudge(id);
+                  onNudged();
+                } catch (err) {
+                  setNudgeError(err instanceof Error ? err.message : String(err));
+                } finally {
+                  window.setTimeout(() => setNudging(false), 4500);
+                }
+              }}
+            >
+              <svg viewBox="0 0 24 24"><path d="M5 5h2v14H5zm4 0 10 7-10 7z" /></svg>
+              {nudging ? 'Nudged' : 'Nudge'}
+            </button>
+            <button
+              className={`btn btn--danger crash-btn${crashArmed ? ' is-armed' : ''}`}
+              onClick={() => {
+                if (!crashArmed) setCrashArmed(true);
+                else {
+                  setCrashArmed(false);
+                  void onCrash();
+                }
+              }}
+            >
+              <svg viewBox="0 0 24 24"><path d="M13 2 11 8 5 5l3 6-6 2 6 2-3 6 6-3 2 6 2-6 6 3-3-6 6-2-6-2 3-6-6 3z" /></svg>
+              {crashArmed ? 'Click again 💥' : 'Crash this plane'}
+            </button>
+          </div>
         )}
+        {nudgeError && <div className="muted nudge-error">{nudgeError}</div>}
 
         {sim && (
           <section className="section">

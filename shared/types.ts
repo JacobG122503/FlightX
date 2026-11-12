@@ -55,6 +55,8 @@ export interface Airport {
   iata: string | null;
   name: string;
   city: string | null;
+  /** State / province. */
+  region: string | null;
   country: string | null;
   lat: number;
   lon: number;

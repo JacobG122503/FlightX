@@ -10,8 +10,10 @@ import { extrapolate } from '../../shared/geo';
 import { BOOM_MS, explosionLayers, onExplode, shakeMap, type Boom } from '../lib/explosion';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
 
-/** How often positions are re-extrapolated (ms). */
+/** How often positions are re-extrapolated (ms) when zoomed out. */
 const FRAME_MS = 250;
+/** From this zoom, planes move smoothly every frame even when not following. */
+const SMOOTH_ZOOM = 9;
 
 interface Props {
   flights: FlightState[];
@@ -35,8 +37,9 @@ interface Hover {
 /** React glue between app state and the deck.gl overlay. Render as a child of <Map>. */
 export function FlightLayers({ flights, selectedId, selectedState, route, trail, zoom, follow, hideOthers, onSelect }: Props) {
   const map = useMap().current;
-  // While following, update every frame so the camera and plane move together smoothly.
-  const now = useNow(follow ? 0 : FRAME_MS);
+  // Every frame while following (camera and plane move together) and when zoomed in far enough
+  // that 4 steps a second would show; zoomed out, planes move well under a pixel per step.
+  const now = useNow(follow || zoom >= SMOOTH_ZOOM ? 0 : FRAME_MS);
   const [hover, setHover] = useState<Hover | null>(null);
   const pointerRef = useRef(false);
 

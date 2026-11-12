@@ -7,6 +7,10 @@ import type { FlightState } from '../../shared/types';
 interface Props {
   flights: FlightState[];
   onPick: (flight: FlightState) => void;
+  /** Focus the box as soon as it appears. */
+  autoFocus?: boolean;
+  /** Escape pressed: the box can be put away. */
+  onClose?: () => void;
 }
 
 const LOCAL_LIMIT = 8;
@@ -19,7 +23,7 @@ function matches(f: FlightState, q: string): boolean {
 }
 
 /** Find a flight by flight number, callsign, registration or airport — in view first, then anywhere. */
-export function SearchBox({ flights, onPick }: Props) {
+export function SearchBox({ flights, onPick, autoFocus, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [remote, setRemote] = useState<FlightState[]>([]);
   const [searching, setSearching] = useState(false);
@@ -103,6 +107,7 @@ export function SearchBox({ flights, onPick }: Props) {
         className="search__input"
         placeholder="Search flight, registration or airport"
         value={query}
+        autoFocus={autoFocus}
         spellCheck={false}
         autoComplete="off"
         onChange={(e) => {
@@ -123,6 +128,7 @@ export function SearchBox({ flights, onPick }: Props) {
           } else if (e.key === 'Escape') {
             setOpen(false);
             inputRef.current?.blur();
+            onClose?.();
           }
         }}
       />

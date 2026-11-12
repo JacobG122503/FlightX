@@ -47,7 +47,8 @@ export class SimSource {
   }
 
   private routeAirport(a: Airport): RouteAirport {
-    return { icao: a.icao, iata: a.iata, name: a.name, city: a.city?.split(',')[0] ?? null, country: this.countryName(a.country), lat: a.lat, lon: a.lon };
+    const region = simData().regions.get(a.region)?.name ?? null;
+    return { icao: a.icao, iata: a.iata, name: a.name, city: a.city?.split(',')[0] ?? null, region, country: this.countryName(a.country), lat: a.lat, lon: a.lon };
   }
 
   private stateOf(l: LiveLeg, now: number): FlightState | null {
@@ -327,6 +328,14 @@ export class SimSource {
     this.ensureCapacity(n);
     const opts = randomOptions(n, Date.now(), new Rng());
     return this.store.add(opts, { random: true, query: null }).length;
+  }
+
+  /** Waiting at a gate (boarding, connection, fuel stop): push back into the taxi queue now. */
+  nudge(id: string): { departAt: number } {
+    this.store.advance(Date.now());
+    const departAt = this.store.nudge(id, Date.now());
+    if (departAt == null) throw new Error('Only a plane waiting at its gate can be nudged.');
+    return { departAt };
   }
 
   crash(id: string): CrashResponse | null {

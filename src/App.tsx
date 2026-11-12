@@ -317,6 +317,7 @@ function FlightApp() {
           onZoomTo={zoomTo}
           onClose={() => select(null)}
           onCrash={crashSelected}
+          onNudged={() => void sim.refresh()}
         />
       )}
 

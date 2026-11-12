@@ -20,6 +20,7 @@ import { aircraftType, fallbackType, registration, squawk, type AircraftType } f
 import { buildProfile, evaluateAtGate, type Profile } from './profile';
 import { distNm } from './data';
 import { Rng, newId } from './random';
+import { baseTaxiMin } from './runways';
 import { FlightLogFile } from './logfile';
 import { RunwayBook } from './runways';
 
@@ -504,6 +505,37 @@ export class SimStore {
 
   allTrips(): StoredTrip[] {
     return [...this.trips.values()];
+  }
+
+  /**
+   * Nudge a plane waiting at its gate: it pushes back now and joins the taxi queue. The rest
+   * of its trip moves earlier by the same amount, and runway queues are worked out afresh.
+   * Returns the new pushback time, or null if the plane isn't waiting at a gate.
+   */
+  nudge(flightId: string, now: number): number | null {
+    const l = this.find(flightId);
+    if (!l || l.index !== l.trip.done || now >= l.profile.departAt) return null;
+    const trip = l.trip;
+    const d = simData();
+    const shift = l.profile.departAt - now;
+    const rest = trip.legs.slice(l.index);
+    for (const leg of rest) {
+      leg.departAt -= shift;
+      // Back to lone-plane taxi times; scheduleRunways adds today's queues again.
+      const rng = new Rng(leg.seed);
+      leg.taxiOutMin = baseTaxiMin(d.byIata.get(leg.from)!, rng);
+      leg.taxiInMin = baseTaxiMin(d.byIata.get(leg.to)!, rng);
+      leg.holdMin = 0;
+      this.live.delete(leg);
+    }
+    // Rebuild runway bookings without this trip's old slots, then book its new ones.
+    this.unindex(trip);
+    this.runwayBook = null;
+    this.scheduleRunways(rest);
+    this.index(trip);
+    for (const leg of rest) this.live.delete(leg);
+    this.markDirty();
+    return this.liveLeg(trip, l.index).profile.departAt;
   }
 
   /** Crash a flying aircraft: it's logged as crashed and its trip ends. */

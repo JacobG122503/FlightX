@@ -1,7 +1,7 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { memo, useEffect, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api, serverNow } from '../../api';
-import type { CustomPassenger, ItineraryOption, PlanResponse, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
+import type { CustomPassenger, ItineraryOption, PlanResponse, SimLogEntry, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
 import type { FlightState } from '../../../shared/types';
 import { SearchBox } from '../SearchBox';
 import { ItineraryCard } from './ItineraryCard';
@@ -47,10 +47,16 @@ const VIEW_LABEL: Record<TripView, string> = {
 
 const SECTIONS_KEY = 'flightx:sections';
 const CREATE_KEY = 'flightx:create';
-type CreateMode = 'route' | 'timer';
+type CreateMode = 'route' | 'timer' | 'random';
+const CREATE_MODES: [CreateMode, string][] = [
+  ['route', 'Fly somewhere'],
+  ['timer', 'Timer flight'],
+  ['random', 'Random'],
+];
 function loadCreateMode(): CreateMode {
   try {
-    return localStorage.getItem(CREATE_KEY) === 'timer' ? 'timer' : 'route';
+    const v = localStorage.getItem(CREATE_KEY);
+    return v === 'timer' || v === 'random' ? v : 'route';
   } catch {
     return 'route';
   }
@@ -62,6 +68,110 @@ function loadSections(): { active: boolean; log: boolean } {
     return { active: true, log: true };
   }
 }
+
+type Airports = SimStatusResponse['airports'];
+
+/** Airport codes joined by arrows, each with a hover popup saying where it is. */
+function Route({ codes, airports }: { codes: string[]; airports: Airports }) {
+  return (
+    <>
+      {codes.map((c, i) => {
+        const a = airports[c];
+        return (
+          <span key={i}>
+            {i > 0 && ' → '}
+            <span className="code" data-tip={a ? `${a.name} — ${a.place}` : undefined}>
+              {c}
+            </span>
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+// The lists re-render only rows that actually changed: rebuilding hundreds of rows on every
+// refresh made the map stutter (most noticeably while following a plane).
+const sameTrip = (x: SimTripSummary, y: SimTripSummary) =>
+  x.id === y.id &&
+  x.status === y.status &&
+  x.activeLeg === y.activeLeg &&
+  x.activeFlightId === y.activeFlightId &&
+  x.legs.length === y.legs.length &&
+  Math.round(x.progress * 300) === Math.round(y.progress * 300);
+
+const TripRow = memo(
+  function TripRow({ trip: t, leftText, airports, onSelect }: { trip: SimTripSummary; leftText: string; airports: Airports; onSelect: (id: string) => void }) {
+    const leg = t.legs[t.activeLeg];
+    const id = t.activeFlightId ?? leg.flightId;
+    return (
+      <li>
+        <div className="trip" role="button" tabIndex={0} onClick={() => onSelect(id)} onKeyDown={(e) => e.key === 'Enter' && onSelect(id)}>
+          <div className="trip__row">
+            <span className="trip__flight">{leg.flightNumber}</span>
+            <span className="trip__route">
+              <Route codes={[t.legs[0].from, ...t.legs.map((l) => l.to)]} airports={airports} />
+            </span>
+            <span className={`origin-badge${t.random ? ' is-random' : ' is-mine'}`}>{t.random ? 'Random' : 'Yours'}</span>
+          </div>
+          <div className="trip__row trip__row--sub">
+            <span>{STATUS_LABEL[t.status]}</span>
+            <span>{leftText}</span>
+          </div>
+          <div className="trip__bar">
+            <div style={{ width: `${t.progress * 100}%` }} />
+          </div>
+        </div>
+      </li>
+    );
+  },
+  (a, b) => a.leftText === b.leftText && a.onSelect === b.onSelect && sameTrip(a.trip, b.trip),
+);
+
+const LogRow = memo(
+  function LogRow({ entry: e, airports, onDetails, onPassengers }: { entry: SimLogEntry; airports: Airports; onDetails: (id: string) => void; onPassengers: (id: string) => void }) {
+    return (
+      <li
+        className={`log__item${e.outcome === 'crashed' ? ' is-crashed' : ''}${e.random ? ' is-random' : ' is-mine'}`}
+        role="button"
+        tabIndex={0}
+        onClick={() => onDetails(e.id)}
+        onKeyDown={(ev) => ev.key === 'Enter' && onDetails(e.id)}
+      >
+        <div className="log__row">
+          <span className={`outcome outcome--${e.outcome}`}>{e.outcome === 'crashed' ? '💥 Crashed' : 'Landed'}</span>
+          <span className="log__time" data-tip={airportTimeTip(e.at, airports[e.to]?.tz ?? null, e.toCity ?? e.to)}>
+            {localStampTz(e.at)}
+          </span>
+        </div>
+        <div className="log__row">
+          <span className="log__flight">{e.flightNumber}</span>
+          <span className="log__route">
+            <Route codes={[e.from, e.to]} airports={airports} />
+          </span>
+          <span className="log__type">{e.aircraftType}</span>
+          <span className={`origin-badge${e.random ? ' is-random' : ' is-mine'}`}>{e.random ? 'Random' : 'Yours'}</span>
+        </div>
+        <div className="log__row log__row--sub">
+          <span className="muted">
+            {e.paxCount ?? 0} passenger{e.paxCount === 1 ? '' : 's'} {e.outcome === 'landed' ? 'delivered' : 'aboard'}
+          </span>
+          <button
+            className="link-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onPassengers(e.id);
+            }}
+          >
+            Passengers
+          </button>
+        </div>
+      </li>
+    );
+  },
+  // Log entries never change once written.
+  (a, b) => a.entry.id === b.entry.id && a.onDetails === b.onDetails && a.onPassengers === b.onPassengers,
+);
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -87,6 +197,22 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
   const [confirmClear, setConfirmClear] = useState(false);
   const [sections, setSections] = useState(loadSections);
   const [createMode, setCreateMode] = useState<CreateMode>(loadCreateMode);
+  /** The "Add flights" panel and the search box both stay tucked away until opened. */
+  const [adding, setAdding] = useState(false);
+  const [searching, setSearching] = useState(false);
+
+  // "/" opens search from anywhere (once open, the search box handles it itself).
+  useEffect(() => {
+    if (!open || searching) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, searching]);
 
   const switchCreate = (mode: CreateMode) => {
     setCreateMode(mode);
@@ -118,23 +244,6 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
     });
 
   const airports = status?.airports ?? {};
-  /** An airport code with a hover popup saying where it is. */
-  const code = (iata: string): ReactNode => {
-    const a = airports[iata];
-    return (
-      <span className="code" data-tip={a ? `${a.name} — ${a.place}` : undefined}>
-        {iata}
-      </span>
-    );
-  };
-  const route = (codes: string[]): ReactNode =>
-    codes.map((c, i) => (
-      <span key={i}>
-        {i > 0 && ' → '}
-        {code(c)}
-      </span>
-    ));
-
   /** After a flight starts: report it and reset the form for the next one. */
   const announce = (trip: SimTripSummary) => {
     const lastLeg = trip.legs[trip.legs.length - 1];
@@ -146,6 +255,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
     setPlan(null);
     setGroupSize(1);
     setCustom({});
+    setAdding(false);
     onSelectFlight(trip.legs[0].flightId);
     onChanged();
   };
@@ -192,6 +302,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
       const { created } = await api.sim.spawn(count);
       setMessage({ kind: 'ok', text: `Spawned ${created.toLocaleString()} random flight${created === 1 ? '' : 's'} — they push back within the next minute.` });
       setCount(1); // reset for next time, like the trip form after a flight starts
+      setAdding(false);
       onChanged();
     } catch (err) {
       setMessage({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
@@ -238,121 +349,162 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
             </div>
           </div>
         </div>
-        <button className="icon-btn" onClick={onToggle} aria-label="Hide the simulation panel" title="Hide">
-          <svg viewBox="0 0 24 24">
-            <path d="M15 6l-6 6 6 6" />
-          </svg>
-        </button>
+        <div className="sim-sidebar__actions">
+          <button
+            className={`icon-btn${searching ? ' is-on' : ''}`}
+            onClick={() => setSearching((v) => !v)}
+            aria-label="Search flights"
+            aria-expanded={searching}
+            title="Search flights (/)"
+          >
+            <svg viewBox="0 0 24 24" className="icon-btn__fill">
+              <path d="M10.5 4a6.5 6.5 0 1 0 4.03 11.6l4.43 4.43 1.06-1.06-4.43-4.43A6.5 6.5 0 0 0 10.5 4Zm0 1.5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z" />
+            </svg>
+          </button>
+          <button className="icon-btn" onClick={onToggle} aria-label="Hide the simulation panel" title="Hide">
+            <svg viewBox="0 0 24 24">
+              <path d="M15 6l-6 6 6 6" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div className="sim-search">
-        <SearchBox flights={flights} onPick={onPickSearch} />
-      </div>
+      {searching && (
+        <div className="sim-search">
+          <SearchBox
+            flights={flights}
+            autoFocus
+            onClose={() => setSearching(false)}
+            onPick={(f) => {
+              onPickSearch(f);
+              setSearching(false);
+            }}
+          />
+        </div>
+      )}
 
       <div className="sim-sidebar__body">
         <section className="sim-section">
-          <div className="create-tabs" role="tablist" aria-label="New flight">
-            <button role="tab" aria-selected={createMode === 'route'} className={createMode === 'route' ? 'is-active' : ''} onClick={() => switchCreate('route')}>
-              Fly somewhere
-            </button>
-            <button role="tab" aria-selected={createMode === 'timer'} className={createMode === 'timer' ? 'is-active' : ''} onClick={() => switchCreate('timer')}>
-              Timer flight
-            </button>
-          </div>
-          {createMode === 'timer' ? (
-            <TimerForm busy={busy} setBusy={setBusy} onSent={timerSent} onError={(text) => setMessage({ kind: 'error', text })} />
-          ) : (
-          <>
-          <form className="trip-form" onSubmit={submit}>
-            <input
-              className="trip-form__input"
-              placeholder="Where to?  e.g. “Iowa to Florida”"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              spellCheck={false}
-            />
-            <button className="trip-form__go" type="submit" disabled={busy || !query.trim()}>
-              {advanced ? 'Search' : 'Send'}
-            </button>
-          </form>
-          <label className="toggle">
-            <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
-            <span className="toggle__track" />
-            <span>
-              Advanced mode <span className="muted">— compare routes like a booking site</span>
-            </span>
-          </label>
-          {advanced && (
-            <div className="group-size">
-              <span>Passengers flying</span>
-              <div className="stepper stepper--small">
-                <button type="button" onClick={() => setGroupSize((n) => Math.max(1, n - 1))} aria-label="Fewer passengers">
-                  −
-                </button>
-                <input
-                  type="number"
-                  min={1}
-                  max={5000}
-                  value={groupSize}
-                  onChange={(e) => setGroupSize(Math.max(1, Math.min(5000, Math.floor(Number(e.target.value) || 1))))}
-                />
-                <button type="button" onClick={() => setGroupSize((n) => Math.min(5000, n + 1))} aria-label="More passengers">
-                  +
-                </button>
-              </div>
-            </div>
-          )}
-          </>
-          )}
-          {message && <div className={`sim-msg sim-msg--${message.kind}`}>{message.text}</div>}
-          {createMode === 'route' && advanced && plan && plan.options.length > 0 && (
-            <div className="itins">
-              <div className="itins__head">
-                {plan.fromLabel} → {plan.toLabel} · {plan.options.length} options
-              </div>
-              {plan.options.map((o) => (
-                <ItineraryCard
-                  key={o.id}
-                  option={o}
-                  busy={busy}
-                  onFly={() => fly(o.id)}
-                  customCount={custom[o.id]?.length ?? 0}
-                  onPassengers={() => setEditing(o)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          <button className={`add-btn${adding ? ' is-open' : ''}`} onClick={() => setAdding((v) => !v)} aria-expanded={adding}>
+            <svg viewBox="0 0 24 24" aria-hidden>
+              <path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
+            </svg>
+            Add flights
+            <Chevron open={adding} />
+          </button>
 
-        <section className="sim-section">
-          <h3 className="section__title">Spawn random flights</h3>
-          <div className="spawn">
-            <div className="stepper">
-              <button onClick={() => setCount((c) => Math.max(1, c - 1))} aria-label="Fewer">
-                −
-              </button>
-              <input
-                type="number"
-                min={1}
-                max={10000}
-                value={count}
-                onChange={(e) => setCount(Math.max(1, Math.min(10000, Math.floor(Number(e.target.value) || 1))))}
-              />
-              <button onClick={() => setCount((c) => Math.min(10000, c + 1))} aria-label="More">
-                +
-              </button>
+          {adding && (
+            <div className="add-panel">
+              <div className="create-tabs" role="tablist" aria-label="How to add flights">
+                {CREATE_MODES.map(([mode, label]) => (
+                  <button key={mode} role="tab" aria-selected={createMode === mode} className={createMode === mode ? 'is-active' : ''} onClick={() => switchCreate(mode)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {createMode === 'timer' && (
+                <TimerForm busy={busy} setBusy={setBusy} onSent={timerSent} onError={(text) => setMessage({ kind: 'error', text })} />
+              )}
+
+              {createMode === 'random' && (
+                <>
+                  <div className="spawn">
+                    <div className="stepper">
+                      <button onClick={() => setCount((c) => Math.max(1, c - 1))} aria-label="Fewer">
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10000}
+                        value={count}
+                        onChange={(e) => setCount(Math.max(1, Math.min(10000, Math.floor(Number(e.target.value) || 1))))}
+                      />
+                      <button onClick={() => setCount((c) => Math.min(10000, c + 1))} aria-label="More">
+                        +
+                      </button>
+                    </div>
+                    <button className="btn btn--primary" onClick={spawn} disabled={busy}>
+                      Spawn {count.toLocaleString()}
+                    </button>
+                  </div>
+                  <div className="presets">
+                    {PRESETS.map((p) => (
+                      <button key={p} className={count === p ? 'is-active' : ''} onClick={() => setCount(p)}>
+                        {p.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="muted add-panel__hint">Random flights on real routes and connections, pushing back within a minute.</p>
+                </>
+              )}
+
+              {createMode === 'route' && (
+                <>
+                  <form className="trip-form" onSubmit={submit}>
+                    <input
+                      className="trip-form__input"
+                      placeholder="Where to?  e.g. “Iowa to Florida”"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      spellCheck={false}
+                      autoFocus
+                    />
+                    <button className="trip-form__go" type="submit" disabled={busy || !query.trim()}>
+                      {advanced ? 'Search' : 'Send'}
+                    </button>
+                  </form>
+                  <label className="toggle">
+                    <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
+                    <span className="toggle__track" />
+                    <span>
+                      Advanced mode <span className="muted">— compare routes like a booking site</span>
+                    </span>
+                  </label>
+                  {advanced && (
+                    <div className="group-size">
+                      <span>Passengers flying</span>
+                      <div className="stepper stepper--small">
+                        <button type="button" onClick={() => setGroupSize((n) => Math.max(1, n - 1))} aria-label="Fewer passengers">
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={5000}
+                          value={groupSize}
+                          onChange={(e) => setGroupSize(Math.max(1, Math.min(5000, Math.floor(Number(e.target.value) || 1))))}
+                        />
+                        <button type="button" onClick={() => setGroupSize((n) => Math.min(5000, n + 1))} aria-label="More passengers">
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {advanced && plan && plan.options.length > 0 && (
+                    <div className="itins">
+                      <div className="itins__head">
+                        {plan.fromLabel} → {plan.toLabel} · {plan.options.length} options
+                      </div>
+                      {plan.options.map((o) => (
+                        <ItineraryCard
+                          key={o.id}
+                          option={o}
+                          busy={busy}
+                          onFly={() => fly(o.id)}
+                          customCount={custom[o.id]?.length ?? 0}
+                          onPassengers={() => setEditing(o)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            <button className="btn btn--primary" onClick={spawn} disabled={busy}>
-              Spawn {count.toLocaleString()}
-            </button>
-          </div>
-          <div className="presets">
-            {PRESETS.map((p) => (
-              <button key={p} className={count === p ? 'is-active' : ''} onClick={() => setCount(p)}>
-                {p.toLocaleString()}
-              </button>
-            ))}
-          </div>
+          )}
+
+          {message && <div className={`sim-msg sim-msg--${message.kind}`}>{message.text}</div>}
         </section>
 
         <section className="sim-section">
@@ -380,33 +532,9 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
             ) : (
               <>
                 <ul className="trips">
-                  {trips.map((t) => {
-                    const leg = t.legs[t.activeLeg];
-                    return (
-                      <li key={t.id}>
-                        <div
-                          className="trip"
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => onSelectFlight(t.activeFlightId ?? leg.flightId)}
-                          onKeyDown={(e) => e.key === 'Enter' && onSelectFlight(t.activeFlightId ?? leg.flightId)}
-                        >
-                          <div className="trip__row">
-                            <span className="trip__flight">{leg.flightNumber}</span>
-                            <span className="trip__route">{route([t.legs[0].from, ...t.legs.map((l) => l.to)])}</span>
-                            <span className={`origin-badge${t.random ? ' is-random' : ' is-mine'}`}>{t.random ? 'Random' : 'Yours'}</span>
-                          </div>
-                          <div className="trip__row trip__row--sub">
-                            <span>{STATUS_LABEL[t.status]}</span>
-                            <span>{fmtMinutes(Math.max(0, (t.finalArriveAt - now) / 60_000))} left</span>
-                          </div>
-                          <div className="trip__bar">
-                            <div style={{ width: `${t.progress * 100}%` }} />
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
+                  {trips.map((t) => (
+                    <TripRow key={t.id} trip={t} leftText={`${fmtMinutes(Math.max(0, (t.finalArriveAt - now) / 60_000))} left`} airports={airports} onSelect={onSelectFlight} />
+                  ))}
                   {status && status.tripCount > trips.length && view === 'newest' && (
                     <li className="muted more">+ {(status.tripCount - trips.length).toLocaleString()} more</li>
                   )}
@@ -432,41 +560,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
             ) : (
               <ul className="log">
                 {log.map((e) => (
-                  <li
-                    key={e.id}
-                    className={`log__item${e.outcome === 'crashed' ? ' is-crashed' : ''}${e.random ? ' is-random' : ' is-mine'}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setDetailFor(e.id)}
-                    onKeyDown={(ev) => ev.key === 'Enter' && setDetailFor(e.id)}
-                  >
-                    <div className="log__row">
-                      <span className={`outcome outcome--${e.outcome}`}>{e.outcome === 'crashed' ? '💥 Crashed' : 'Landed'}</span>
-                      <span className="log__time" data-tip={airportTimeTip(e.at, airports[e.to]?.tz ?? null, e.toCity ?? e.to)}>
-                        {localStampTz(e.at)}
-                      </span>
-                    </div>
-                    <div className="log__row">
-                      <span className="log__flight">{e.flightNumber}</span>
-                      <span className="log__route">{route([e.from, e.to])}</span>
-                      <span className="log__type">{e.aircraftType}</span>
-                      <span className={`origin-badge${e.random ? ' is-random' : ' is-mine'}`}>{e.random ? 'Random' : 'Yours'}</span>
-                    </div>
-                    <div className="log__row log__row--sub">
-                      <span className="muted">
-                        {e.paxCount ?? 0} passenger{e.paxCount === 1 ? '' : 's'} {e.outcome === 'landed' ? 'delivered' : 'aboard'}
-                      </span>
-                      <button
-                        className="link-btn"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setManifestFor(e.id);
-                        }}
-                      >
-                        Passengers
-                      </button>
-                    </div>
-                  </li>
+                  <LogRow key={e.id} entry={e} airports={airports} onDetails={setDetailFor} onPassengers={setManifestFor} />
                 ))}
                 {status && status.logTotal > log.length && (
                   <li className="muted more">

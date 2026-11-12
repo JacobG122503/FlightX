@@ -13,6 +13,12 @@ const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
 const FONT_REGULAR = ['Noto Sans Regular'];
 const FONT_BOLD = ['Noto Sans Bold'];
 const NAME: ExpressionSpecification = ['coalesce', ['get', 'name:en'], ['get', 'name_en'], ['get', 'name']];
+/** If a label would overlap another, try just above, below or beside the place before hiding it. */
+const ALT_PLACEMENT = {
+  'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'] as ('center' | 'top' | 'bottom' | 'left' | 'right')[],
+  'text-radial-offset': 0.4,
+  'text-justify': 'auto' as const,
+};
 const LABEL_HALO = { 'text-color': '#ffffff', 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.4, 'text-halo-blur': 0.5 };
 
 export const SATELLITE_STYLE: StyleSpecification = {
@@ -72,7 +78,27 @@ export const SATELLITE_STYLE: StyleSpecification = {
         'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.6, 6, 1.4, 10, 2.2],
       },
     },
-    // Towns and cities.
+    // Villages (from zoom 8) and hamlets (from zoom 11): smaller and dimmer, and drawn under
+    // the city/town labels so they never push a bigger place's name off the map.
+    {
+      id: 'label-village',
+      type: 'symbol',
+      source: 'osm',
+      'source-layer': 'place',
+      minzoom: 8,
+      filter: ['any', ['==', ['get', 'class'], 'village'], ['all', ['==', ['get', 'class'], 'hamlet'], ['>=', ['zoom'], 11]]],
+      layout: {
+        'text-field': NAME,
+        'text-font': FONT_REGULAR,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 12, 13],
+        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
+        'text-max-width': 7,
+        'text-padding': 1,
+        ...ALT_PLACEMENT,
+      },
+      paint: { ...LABEL_HALO, 'text-color': 'rgba(255,255,255,0.82)' },
+    },
+    // Cities, then towns.
     {
       id: 'label-city',
       type: 'symbol',
@@ -83,9 +109,12 @@ export const SATELLITE_STYLE: StyleSpecification = {
       layout: {
         'text-field': NAME,
         'text-font': FONT_REGULAR,
-        'text-size': ['interpolate', ['linear'], ['zoom'], 4, 11, 10, 15],
-        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 4, ['match', ['get', 'class'], 'city', 12, 10.5], 10, ['match', ['get', 'class'], 'city', 16, 14]],
+        // Cities first, then by importance.
+        'symbol-sort-key': ['+', ['match', ['get', 'class'], 'city', 0, 100], ['coalesce', ['get', 'rank'], 99]],
         'text-max-width': 8,
+        'text-padding': 1,
+        ...ALT_PLACEMENT,
       },
       paint: LABEL_HALO,
     },

@@ -99,6 +99,13 @@ export function createApp(staticDir: string | null) {
   sim.get('/missed', (_req, res) => {
     res.set('Cache-Control', 'no-store').json(simSource.missed());
   });
+  sim.post('/flights/:id/nudge', (req, res) => {
+    try {
+      res.json(simSource.nudge(String(req.params.id).toLowerCase()));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
   sim.post('/flights/:id/crash', (req, res) => {
     const result = simSource.crash(String(req.params.id).toLowerCase());
     if (!result) res.status(404).json({ error: 'That flight isn’t in the air.' });
