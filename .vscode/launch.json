@@ -1,0 +1,18 @@
+{
+  // Press ▶ (Run and Debug) or F5 to open FlightX in its own window.
+  // Close the window or press Stop to quit.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FlightX",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}
