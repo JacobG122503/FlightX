@@ -138,6 +138,20 @@ export function resolvePlace(text: string): Place | null {
   const byCode = /^[A-Z]{3}$/.test(upper) ? d.byIata.get(upper) : /^[A-Z]{4}$/.test(upper) ? d.byIcao.get(upper) : undefined;
   if (byCode) return airportPlace(d, byCode);
 
+  // "City State" without a comma ("Wilton Iowa", "Lafayette IN", "Panama City Florida").
+  if (!raw.includes(',') && !ix.cities.has(norm(raw))) {
+    const words = raw.split(/\s+/);
+    for (let k = Math.min(3, words.length - 1); k >= 1; k--) {
+      const head = words.slice(0, -k).join(' ');
+      const tail = norm(words.slice(-k).join(' '));
+      const isQualifier = ix.usStateCodes.has(tail) || ix.regions.has(tail) || ix.countries.has(tail) || Boolean(COUNTRY_REGION_ALIASES[tail]);
+      if (isQualifier && ix.cities.has(norm(head))) {
+        const place = resolvePlace(`${head}, ${words.slice(-k).join(' ')}`);
+        if (place) return place;
+      }
+    }
+  }
+
   // "City, Qualifier" (state, state code or country).
   const [namePart, qualPart] = raw.split(/,(.+)/).map((s) => s?.trim());
   const name = norm(namePart);

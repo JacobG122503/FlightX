@@ -152,9 +152,10 @@ function buildLeg(o: Airport, dst: Airport, airline: Airline, type: AircraftType
   };
 }
 
+/** Quick turns for the sim: a connection never takes more than 10 minutes at the gate. */
 function connectionMinutes(prev: ItineraryLeg, next: { from: Airport; to: Airport }, rng: Rng): number {
   const international = prev.from.country !== prev.to.country || next.from.country !== next.to.country;
-  return (international ? 80 : 50) + rng.int(0, 75);
+  return international ? rng.int(7, 10) : rng.int(5, 10);
 }
 
 function priceFor(legs: ItineraryLeg[], stops: number, rng: Rng): number {
@@ -252,7 +253,36 @@ function fuelStops(d: SimData, o: Airport, dst: Airport, type: AircraftType): Ai
     const longest = Math.max(...points.slice(1).map((p, i) => distNm(points[i], p)));
     if (longest <= type.rangeNm * 0.95) return points;
   }
-  return [o, dst];
+  return hopToward(d, o, dst, type, minWeight) ?? [o, dst];
+}
+
+/**
+ * Fallback for trips the straight-line plan can't handle, e.g. airports on nearly opposite
+ * sides of the Earth (no single great-circle path): repeatedly fly to the airport within
+ * range that gets closest to the destination.
+ */
+function hopToward(d: SimData, o: Airport, dst: Airport, type: AircraftType, minWeight: number): Airport[] | null {
+  const reach = type.rangeNm * 0.9;
+  const pool = d.flyable.filter((a) => a.weight >= minWeight);
+  const points = [o];
+  let at = o;
+  for (let hop = 0; hop < 40; hop++) {
+    if (distNm(at, dst) <= reach) return [...points, dst];
+    let next: Airport | null = null;
+    let nextLeft = distNm(at, dst);
+    for (const a of pool) {
+      if (a === at || points.includes(a) || distNm(at, a) > reach) continue;
+      const left = distNm(a, dst);
+      if (left < nextLeft) {
+        next = a;
+        nextLeft = left;
+      }
+    }
+    if (!next) return null;
+    points.push(next);
+    at = next;
+  }
+  return null;
 }
 
 function charterOption(d: SimData, o: Airport, dst: Airport, type: AircraftType, passengers: number, start: number, rng: Rng, why: string): ItineraryOption {
@@ -265,7 +295,8 @@ function charterOption(d: SimData, o: Airport, dst: Airport, type: AircraftType,
   let t = start;
   for (let i = 0; i < points.length - 1; i++) {
     if (i > 0) {
-      const wait = type.kind === 'heavy' ? rng.int(60, 90) : rng.int(40, 60);
+      // Refuelling is capped at 10 minutes too, then it's back into the taxi queue.
+      const wait = type.kind === 'heavy' ? rng.int(8, 10) : rng.int(5, 8);
       layovers.push({ airport: toSimAirport(points[i]), minutes: wait, fuelStop: true });
       t += wait * 60_000;
     }

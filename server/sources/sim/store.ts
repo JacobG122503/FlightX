@@ -23,6 +23,9 @@ import { Rng, newId } from './random';
 import { FlightLogFile } from './logfile';
 import { RunwayBook } from './runways';
 
+/** Longest a plane sits at the gate between flights of a trip (connection or fuel stop). */
+const MAX_TURN_MS = 10 * 60_000;
+
 export interface StoredLeg {
   /** Flight id on the map = the aircraft's ICAO 24-bit address. */
   id: string;
@@ -349,18 +352,27 @@ export class SimStore {
   /**
    * Fits a new trip's flights into the runway traffic: queue for takeoff behind other
    * departures, wait (slowed in the descent) for a landing slot, and taxi in a bit
-   * longer at busy airports. Connections are pushed back if an earlier leg runs late.
+   * longer at busy airports. Each connection keeps its planned turn (at most 10 minutes at
+   * the gate) after the previous flight actually arrives, then joins the takeoff queue.
    */
   private scheduleRunways(legs: StoredLeg[]) {
     const d = simData();
     const book = this.book();
     let prevArrive = 0;
+    let prevPlannedArrive = 0;
     for (const leg of legs) {
       const from = d.byIata.get(leg.from);
       const to = d.byIata.get(leg.to);
       if (!from || !to) continue;
-      if (prevArrive && leg.departAt < prevArrive + 30 * 60_000) leg.departAt = prevArrive + 30 * 60_000;
       const type = aircraftType(leg.type) ?? fallbackType(distNm(from, to), new Rng(leg.seed));
+      const planned = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin }).arriveAt;
+      if (prevArrive) {
+        const turn = Math.min(MAX_TURN_MS, Math.max(0, leg.departAt - prevPlannedArrive));
+        const shift = prevArrive + turn - leg.departAt;
+        leg.departAt += shift;
+      }
+      // The next flight's planned departure is relative to this flight's planned arrival.
+      prevPlannedArrive = planned;
       const base = { from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiInMin: leg.taxiInMin };
       const takeoff = book.bookTakeoff(from, leg.departAt + leg.taxiOutMin * 60_000);
       leg.taxiOutMin = (takeoff - leg.departAt) / 60_000;
