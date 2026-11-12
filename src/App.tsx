@@ -10,6 +10,8 @@ import { SimSidebar } from './components/sim/SimSidebar';
 import { MissedModal } from './components/sim/MissedModal';
 import { Tooltips } from './components/Tooltips';
 import { NightUpdater } from './components/NightUpdater';
+import { ChillHud } from './components/ChillHud';
+import { useIdle } from './hooks/useIdle';
 import { useSimStatus } from './hooks/useSim';
 import { explode } from './lib/explosion';
 import { useFlights, viewChanged, type MapView } from './hooks/useFlights';
@@ -119,6 +121,8 @@ function FlightApp() {
   const selected = useFlightDetail(selectedId, source, visible);
   const [tripView, setTripView] = useState<TripView>('newest');
   const sim = useSimStatus(source === 'sim' && visible, tripView);
+  /** Chill mode: following a plane with no input for 30 s hides the UI (screensaver). */
+  const chill = useIdle(30_000, follow && Boolean(selectedId));
   const simMode = source === 'sim';
 
   const selectedState = useMemo(() => {
@@ -253,7 +257,7 @@ function FlightApp() {
   }, [map, selectedState]);
 
   return (
-    <div className={`app mode-${source}${selectedId ? ' has-panel' : ''}${simMode && sidebarOpen ? ' sidebar-open' : ''}`}>
+    <div className={`app mode-${source}${selectedId ? ' has-panel' : ''}${simMode && sidebarOpen ? ' sidebar-open' : ''}${chill ? ' is-chill' : ''}`}>
       <div className="map-wrap">
         <Map
           id="main"
@@ -345,6 +349,8 @@ function FlightApp() {
       </div>
 
       <MapControls />
+
+      {chill && selectedState && <ChillHud state={selectedState} detail={selected.detail} />}
     </div>
   );
 }

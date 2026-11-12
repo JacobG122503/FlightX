@@ -21,6 +21,7 @@ import { buildProfile, evaluate, type Profile } from './profile';
 import { distNm } from './data';
 import { Rng, newId } from './random';
 import { FlightLogFile } from './logfile';
+import { RunwayBook } from './runways';
 
 export interface StoredLeg {
   /** Flight id on the map = the aircraft's ICAO 24-bit address. */
@@ -44,6 +45,8 @@ export interface StoredLeg {
   paxTarget?: number;
   /** Regional partner flying it (e.g. "SkyWest Airlines"). */
   operatedBy?: string;
+  /** Minutes slowed in the descent waiting for a landing slot. */
+  holdMin?: number;
 }
 
 export interface StoredTrip {
@@ -230,7 +233,7 @@ export class SimStore {
       const from = d.byIata.get(leg.from)!;
       const to = d.byIata.get(leg.to)!;
       const type = aircraftType(leg.type) ?? fallbackType(distNm(from, to), new Rng(leg.seed));
-      const profile = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin });
+      const profile = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin, holdMin: leg.holdMin });
       l = { trip, index, leg, from, to, type, profile };
       this.live.set(leg, l);
     }
@@ -317,12 +320,56 @@ export class SimStore {
           ...(l.operatedBy ? { operatedBy: l.operatedBy } : {}),
         };
       });
+      this.scheduleRunways(legs);
       const trip: StoredTrip = { id: tripId, createdAt: Date.now(), random: meta.random, query: meta.query, kind: opt.kind, legs, done: 0 };
       this.index(trip);
       created.push(trip);
     }
     if (created.length) this.markDirty();
     return created;
+  }
+
+  private runwayBook: RunwayBook | null = null;
+
+  /** Runway bookings for every flight already scheduled (built once, then kept up to date). */
+  private book(): RunwayBook {
+    if (!this.runwayBook) {
+      this.runwayBook = new RunwayBook();
+      for (const trip of this.trips.values()) {
+        for (let i = trip.done; i < trip.legs.length; i++) {
+          const l = this.liveLeg(trip, i);
+          this.runwayBook.record(l.from, l.profile.takeoffAt, l.to, l.profile.landAt);
+        }
+      }
+    }
+    this.runwayBook.prune(Date.now());
+    return this.runwayBook;
+  }
+
+  /**
+   * Fits a new trip's flights into the runway traffic: queue for takeoff behind other
+   * departures, wait (slowed in the descent) for a landing slot, and taxi in a bit
+   * longer at busy airports. Connections are pushed back if an earlier leg runs late.
+   */
+  private scheduleRunways(legs: StoredLeg[]) {
+    const d = simData();
+    const book = this.book();
+    let prevArrive = 0;
+    for (const leg of legs) {
+      const from = d.byIata.get(leg.from);
+      const to = d.byIata.get(leg.to);
+      if (!from || !to) continue;
+      if (prevArrive && leg.departAt < prevArrive + 30 * 60_000) leg.departAt = prevArrive + 30 * 60_000;
+      const type = aircraftType(leg.type) ?? fallbackType(distNm(from, to), new Rng(leg.seed));
+      const base = { from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiInMin: leg.taxiInMin };
+      const takeoff = book.bookTakeoff(from, leg.departAt + leg.taxiOutMin * 60_000);
+      leg.taxiOutMin = (takeoff - leg.departAt) / 60_000;
+      const unheld = buildProfile({ ...base, taxiOutMin: leg.taxiOutMin });
+      const landing = book.bookLanding(to, unheld.landAt);
+      leg.holdMin = Math.max(0, (landing - unheld.landAt) / 60_000);
+      leg.taxiInMin += Math.min(10, book.arrivalsNear(to, landing) * 0.4);
+      prevArrive = buildProfile({ ...base, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin, holdMin: leg.holdMin }).arriveAt;
+    }
   }
 
   private logEntry(l: LiveLeg, outcome: SimLogEntry['outcome'], at: number): SimLogEntry {

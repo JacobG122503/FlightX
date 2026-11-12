@@ -155,6 +155,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
     try {
       const { created } = await api.sim.spawn(count);
       setMessage({ kind: 'ok', text: `Spawned ${created.toLocaleString()} random flight${created === 1 ? '' : 's'} — they push back within the next minute.` });
+      setCount(1); // reset for next time, like the trip form after a flight starts
       onChanged();
     } catch (err) {
       setMessage({ kind: 'error', text: err instanceof Error ? err.message : String(err) });

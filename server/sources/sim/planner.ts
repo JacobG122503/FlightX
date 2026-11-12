@@ -12,6 +12,7 @@ import { simData, distNm, toSimAirport, type Airport, type AirlineRec, type SimD
 import { AIRCRAFT, cruiseAltitude, typeFromFleet, type AircraftType } from './aircraft';
 import { seatMap } from './seatmaps';
 import { buildProfile } from './profile';
+import { baseTaxiMin } from './runways';
 import { Rng, newId } from './random';
 import type { Place } from './geocode';
 
@@ -124,8 +125,9 @@ interface Operation {
 function buildLeg(o: Airport, dst: Airport, airline: Airline, type: AircraftType, departAt: number, rng: Rng, privateFlight = false, op: Operation = { operator: null, operatedBy: null }): ItineraryLeg {
   const distance = distNm(o, dst);
   const cruise = cruiseAltitude(type, bearingDeg(o, dst), distance, rng);
-  const taxiOutMin = rng.int(8, o.weight > 150 ? 22 : 14);
-  const taxiInMin = rng.int(4, dst.weight > 150 ? 12 : 8);
+  // Lone-plane taxi times; the store adds runway queueing when the flight is booked.
+  const taxiOutMin = baseTaxiMin(o, rng);
+  const taxiInMin = baseTaxiMin(dst, rng);
   const prof = buildProfile({ from: o, to: dst, type, cruiseFt: cruise, departAt, taxiOutMin, taxiInMin });
   const num = type.regional ? rng.int(3000, 5999) : rng.int(1, 2999);
   const code = airline.iata ?? airline.icao ?? 'ZZ';

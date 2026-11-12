@@ -2243,6 +2243,98 @@ pre,
   box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.5);
 }
 
+/* ── Chill mode (screensaver while following a plane) ───────────────────── */
+
+.topbar,
+.sim-sidebar,
+.edge-tab,
+.panel,
+.bottom-left,
+.controls,
+.top-center,
+.hover-card {
+  transition: opacity 0.8s ease;
+}
+.app.is-chill {
+  cursor: none;
+}
+.app.is-chill .topbar,
+.app.is-chill .sim-sidebar,
+.app.is-chill .edge-tab,
+.app.is-chill .panel,
+.app.is-chill .bottom-left,
+.app.is-chill .controls,
+.app.is-chill .top-center,
+.app.is-chill .hover-card,
+.app.is-chill .titlebar-drag {
+  opacity: 0;
+  pointer-events: none;
+}
+.app.is-chill .maplibregl-canvas {
+  cursor: none !important;
+}
+.chill-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 30;
+  min-width: 300px;
+  padding: 14px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  animation: chill-in 1.2s ease;
+}
+@keyframes chill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+.chill-hud__top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+.chill-hud__name {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.chill-hud__route {
+  color: var(--muted);
+}
+.chill-hud__eta {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.chill-hud__at {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.chill-hud__bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.chill-hud__bar div {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(60, 179, 113, 0.5), #3cb371);
+}
+.chill-hud__stats {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Edge tabs: collapsed panels as small arrows on the window's left edge ── */
 
 .edge-tab {

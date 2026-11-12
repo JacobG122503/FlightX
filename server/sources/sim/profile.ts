@@ -60,8 +60,11 @@ export function buildProfile(opts: {
   departAt: number;
   taxiOutMin: number;
   taxiInMin: number;
+  /** Minutes of delay waiting for a landing slot, absorbed by flying the descent slower. */
+  holdMin?: number;
 }): Profile {
   const { from, to, type, departAt, taxiOutMin, taxiInMin } = opts;
+  const holdMin = opts.holdMin ?? 0;
   const D = Math.max(1, distNm(from, to));
   const cruiseGs = Math.max(150, type.cruiseKt + windComponent(from, to));
   const topOfApproach = to.elevFt + APPROACH_FT;
@@ -107,7 +110,7 @@ export function buildProfile(opts: {
   push('climb', seg.c1.min * squeeze, c1nm, from.elevFt, seg.c1Top);
   push('climb', seg.c2.min * squeeze, c2nm, seg.c1Top, cruiseFt);
   push('cruise', (crnm / cruiseGs) * 60, crnm, cruiseFt, cruiseFt);
-  push('descent', seg.ds.min * squeeze, dsnm, cruiseFt, topOfApproach);
+  push('descent', seg.ds.min * squeeze + holdMin, dsnm, cruiseFt, topOfApproach);
   push('approach', seg.ap.min * squeeze, Math.max(0, D - s), topOfApproach, to.elevFt);
   const landAt = t;
   push('taxi-in', taxiInMin, 0, to.elevFt, to.elevFt);
