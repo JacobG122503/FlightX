@@ -16,9 +16,9 @@
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.38), 0 2px 6px rgba(0, 0, 0, 0.25);
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
-  /* Room for the macOS traffic-light buttons in the hidden-inset title bar. */
-  --titlebar-inset: 0px;
   --gutter: 12px;
+  /* Where the panels start: just below the macOS window buttons, or at the edge when fullscreen. */
+  --top: var(--gutter);
   color-scheme: dark;
 }
 
@@ -26,29 +26,23 @@
   box-sizing: border-box;
 }
 
-html.is-desktop {
-  --titlebar-inset: 76px;
+html.is-desktop:not(.is-fullscreen) {
+  --top: 40px;
 }
 
-/* Window dragging (desktop app): the strip behind the traffic lights and the top chips. */
+/* Window dragging (desktop app, not fullscreen): the strip along the top, above the panels. */
 .titlebar-drag {
+  display: none;
+}
+html.is-desktop:not(.is-fullscreen) .titlebar-drag {
+  display: block;
   position: absolute;
   top: 0;
   left: 0;
-  width: calc(var(--titlebar-inset) + var(--gutter));
-  height: 70px;
+  right: 0;
+  height: var(--top);
   z-index: 19;
   -webkit-app-region: drag;
-}
-.topbar__brand,
-.topbar__status {
-  -webkit-app-region: drag;
-  user-select: none;
-}
-.topbar button,
-.topbar input,
-.topbar a {
-  -webkit-app-region: no-drag;
 }
 
 html,
@@ -131,76 +125,10 @@ pre,
   overflow: hidden;
 }
 
-/* ── Top bar ────────────────────────────────────────────────────────────── */
-
-.topbar {
-  position: absolute;
-  top: var(--gutter);
-  left: calc(var(--gutter) + var(--titlebar-inset));
-  right: var(--gutter);
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  pointer-events: none;
-  z-index: 20;
-}
-.topbar > * {
-  pointer-events: auto;
-}
-
-.topbar__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 6px 6px 12px;
-  height: 46px;
-  flex: none;
-}
-.topbar__logo {
-  width: 22px;
-  height: 22px;
-  fill: var(--accent);
-  flex: none;
-}
-.topbar__name {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-}
-
 @keyframes blink {
   to {
     opacity: 0.25;
   }
-}
-
-.topbar__search {
-  flex: 1 1 auto;
-  max-width: 420px;
-  height: 46px;
-}
-
-/* ── Status ─────────────────────────────────────────────────────────────── */
-
-.topbar__status {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 46px;
-  padding: 0 16px;
-  white-space: nowrap;
-  font-size: 12.5px;
-  color: var(--text);
-  flex: none;
-}
-.status-count strong {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.status-detail {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ── Search ─────────────────────────────────────────────────────────────── */
@@ -299,11 +227,11 @@ pre,
   color: var(--muted);
 }
 
-/* ── Notice banner ──────────────────────────────────────────────────────── */
+/* ── Focus banner ───────────────────────────────────────────────────────── */
 
 .top-center {
   position: absolute;
-  top: 70px;
+  top: var(--top);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -383,10 +311,10 @@ pre,
 
 .panel {
   position: absolute;
-  top: 70px;
+  top: var(--top);
   left: var(--gutter);
   width: 372px;
-  max-height: calc(100% - 70px - var(--gutter));
+  max-height: calc(100% - var(--top) - var(--gutter));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -840,7 +768,7 @@ pre,
 
 .sim-sidebar {
   position: absolute;
-  top: 70px;
+  top: var(--top);
   left: var(--gutter);
   bottom: var(--gutter);
   width: 360px;
@@ -857,14 +785,43 @@ pre,
   padding: 12px 12px 10px 16px;
   border-bottom: 1px solid var(--border);
 }
-.sim-sidebar__title {
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.brand__logo {
+  width: 26px;
+  height: 26px;
+  fill: var(--accent);
+  flex: none;
+}
+.brand__name {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
+  letter-spacing: -0.01em;
 }
 .sim-sidebar__sub {
   color: var(--muted);
   font-size: 12px;
   margin-top: 1px;
+}
+.sim-sidebar__sub.is-error {
+  color: var(--danger);
+}
+.sim-search {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  height: 40px;
+  margin: 10px 14px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.sim-search .search__input {
+  border-radius: 10px;
 }
 .sim-sidebar__body {
   overflow-y: auto;
@@ -2025,7 +1982,6 @@ pre,
 
 /* ── Chill mode (screensaver while following a plane) ───────────────────── */
 
-.topbar,
 .sim-sidebar,
 .edge-tab,
 .panel,
@@ -2038,7 +1994,6 @@ pre,
 .app.is-chill {
   cursor: none;
 }
-.app.is-chill .topbar,
 .app.is-chill .sim-sidebar,
 .app.is-chill .edge-tab,
 .app.is-chill .panel,
@@ -2145,7 +2100,7 @@ pre,
   stroke-linejoin: round;
 }
 .edge-tab--sidebar {
-  top: 82px;
+  top: calc(var(--top) + 12px);
 }
 /* Lives in the bottom-left stack; pull it flush against the window edge. */
 .edge-tab--legend {

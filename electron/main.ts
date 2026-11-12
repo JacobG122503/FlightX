@@ -106,7 +106,9 @@ async function createWindow() {
     title: 'FlightX',
     backgroundColor: '#0b0f17',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 20, y: 28 },
+    trafficLightPosition: { x: 20, y: 18 },
+    // FlightX always starts fullscreen; leaving fullscreen restores the remembered window size.
+    fullscreen: true,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -116,7 +118,6 @@ async function createWindow() {
     },
   });
   mainWindow = win;
-  if (state.maximized) win.maximize();
 
   win.once('ready-to-show', () => win.show());
   win.on('close', () => saveWindowState(win));

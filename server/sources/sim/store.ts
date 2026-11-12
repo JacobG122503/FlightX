@@ -17,7 +17,7 @@ import type { CustomPassenger, ItineraryOption, SimLogEntry } from '../../../sha
 import { mapFor, passengerCount, placeCustom, type PaxInput } from './passengers';
 import { simData, type Airport } from './data';
 import { aircraftType, fallbackType, registration, squawk, type AircraftType } from './aircraft';
-import { buildProfile, evaluate, type Profile } from './profile';
+import { buildProfile, evaluateAtGate, type Profile } from './profile';
 import { distNm } from './data';
 import { Rng, newId } from './random';
 import { FlightLogFile } from './logfile';
@@ -473,11 +473,24 @@ export class SimStore {
   }
 
   /** Legs currently between pushback and gate arrival. */
+  /** Flights that have pushed back and not yet parked at their destination. */
   *active(now: number): Generator<LiveLeg> {
     for (const trip of this.trips.values()) {
       if (trip.done >= trip.legs.length) continue;
       const l = this.liveLeg(trip, trip.done);
       if (now >= l.profile.departAt && now < l.profile.arriveAt) yield l;
+    }
+  }
+
+  /**
+   * Everything drawn on the map: active flights plus planes parked at their gate before
+   * pushback — boarding (up to 2 h ahead) or waiting for the next flight of a connection.
+   */
+  *onMap(now: number): Generator<LiveLeg> {
+    for (const trip of this.trips.values()) {
+      if (trip.done >= trip.legs.length) continue;
+      const l = this.liveLeg(trip, trip.done);
+      if (now < l.profile.arriveAt && (now >= l.profile.departAt || trip.done > 0 || l.profile.departAt - now < 2 * 3_600_000)) yield l;
     }
   }
 
@@ -496,8 +509,8 @@ export class SimStore {
   /** Crash a flying aircraft: it's logged as crashed and its trip ends. */
   crash(flightId: string, now: number): { live: LiveLeg; entry: SimLogEntry; lat: number; lon: number; altFt: number; trackDeg: number } | null {
     const l = this.find(flightId);
-    if (!l) return null;
-    const st = evaluate(l.profile, l.from, l.to, now, l.leg.seed);
+    if (!l || l.index !== l.trip.done) return null;
+    const st = evaluateAtGate(l.profile, l.from, l.to, now, l.leg.seed);
     if (!st) return null;
     const entry = this.logEntry(l, 'crashed', now);
     this.appendLog(entry);

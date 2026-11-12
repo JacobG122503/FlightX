@@ -10,7 +10,7 @@ import { mapFor, passengerCount, passengerList } from './passengers';
 import { aircraftType as typeInfo } from './aircraft';
 import { person } from './names';
 import { simData, toSimAirport, distNm, type Airport } from './data';
-import { evaluate, sampleTrack } from './profile';
+import { evaluateAtGate, sampleTrack } from './profile';
 import { parseTripQuery, resolvePlace } from './geocode';
 import { findOptions, randomOptions, timerOption } from './planner';
 import { SimStore, type LiveLeg, type StoredTrip } from './store';
@@ -51,7 +51,9 @@ export class SimSource {
   }
 
   private stateOf(l: LiveLeg, now: number): FlightState | null {
-    const st = evaluate(l.profile, l.from, l.to, now, l.leg.seed);
+    // Only the trip's current flight is somewhere; later legs of a connection aren't yet.
+    if (l.index !== l.trip.done) return null;
+    const st = evaluateAtGate(l.profile, l.from, l.to, now, l.leg.seed);
     if (!st) return null;
     return {
       id: l.leg.id,
@@ -79,7 +81,7 @@ export class SimSource {
     this.store.touch(now);
     const inView = containsFn(bounds, 0.2);
     const flights: FlightState[] = [];
-    for (const l of this.store.active(now)) {
+    for (const l of this.store.onMap(now)) {
       const st = this.stateOf(l, now);
       if (st && inView(st.lat, st.lon)) flights.push(st);
     }
@@ -96,13 +98,13 @@ export class SimSource {
     const trip = l.trip;
     const last = this.store.liveLeg(trip, trip.legs.length - 1);
     const next = l.index + 1 < trip.legs.length ? this.store.liveLeg(trip, l.index + 1) : null;
-    const st = evaluate(l.profile, l.from, l.to, now, l.leg.seed);
+    const st = l.index === trip.done ? evaluateAtGate(l.profile, l.from, l.to, now, l.leg.seed) : null;
     const sim: SimFlightInfo = {
       tripId: trip.id,
       random: trip.random,
       legIndex: l.index,
       legCount: trip.legs.length,
-      phase: st?.phase ?? 'taxi-out',
+      phase: st?.phase ?? 'gate',
       departAt: l.profile.departAt,
       takeoffAt: l.profile.takeoffAt,
       landAt: l.profile.landAt,
@@ -152,7 +154,7 @@ export class SimSource {
     if (q.length < 2) return [];
     const now = Date.now();
     const out: FlightState[] = [];
-    for (const l of this.store.active(now)) {
+    for (const l of this.store.onMap(now)) {
       const hit =
         l.leg.callsign.startsWith(q) ||
         l.leg.flightNumber.replace(/\s+/g, '').startsWith(q) ||

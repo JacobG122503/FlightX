@@ -2,6 +2,8 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, serverNow } from '../../api';
 import type { CustomPassenger, ItineraryOption, PlanResponse, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
+import type { FlightState } from '../../../shared/types';
+import { SearchBox } from '../SearchBox';
 import { ItineraryCard } from './ItineraryCard';
 import { PassengerEditor } from '../passengers/PassengerEditor';
 import { PassengerModal } from '../passengers/PassengerModal';
@@ -17,6 +19,11 @@ interface Props {
   onChanged: () => void;
   /** Select a flight on the map (and fly to it). */
   onSelectFlight: (id: string) => void;
+  /** Planes in view, for instant search matches. */
+  flights: FlightState[];
+  onPickSearch: (flight: FlightState) => void;
+  /** Set when the simulator service isn't answering. */
+  error: string | null;
   view: TripView;
   onView: (view: TripView) => void;
 }
@@ -64,7 +71,7 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, view, onView }: Props) {
+export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, flights, onPickSearch, error, view, onView }: Props) {
   const now = useNow(5000);
   const [query, setQuery] = useState('');
   const [advanced, setAdvanced] = useState(false);
@@ -216,12 +223,19 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
   return (
     <aside className="sim-sidebar glass" aria-label="Simulation">
       <div className="sim-sidebar__head">
-        <div>
-          <div className="sim-sidebar__title">Simulation</div>
-          <div className="sim-sidebar__sub">
-            {status
-              ? `${status.activeFlights.toLocaleString()} in the air · ${status.tripCount.toLocaleString()} trip${status.tripCount === 1 ? '' : 's'}`
-              : 'Loading…'}
+        <div className="brand">
+          <svg viewBox="0 0 64 64" className="brand__logo" aria-hidden>
+            <path d="M32 6c2.2 0 3.6 2.4 3.6 5.4v13.2l20.4 12v5.2l-20.4-6.2v10.6l6 4.6v4.2L32 52l-9.6 3V50.8l6-4.6V35.6L8 41.8v-5.2l20.4-12V11.4C28.4 8.4 29.8 6 32 6z" />
+          </svg>
+          <div>
+            <div className="brand__name">FlightX</div>
+            <div className={`sim-sidebar__sub${error ? ' is-error' : ''}`} title={error ?? undefined}>
+              {error
+                ? 'Simulator not responding — retrying…'
+                : status
+                  ? `${status.activeFlights.toLocaleString()} in the air · ${status.tripCount.toLocaleString()} trip${status.tripCount === 1 ? '' : 's'}`
+                  : 'Loading…'}
+            </div>
           </div>
         </div>
         <button className="icon-btn" onClick={onToggle} aria-label="Hide the simulation panel" title="Hide">
@@ -229,6 +243,10 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
             <path d="M15 6l-6 6 6 6" />
           </svg>
         </button>
+      </div>
+
+      <div className="sim-search">
+        <SearchBox flights={flights} onPick={onPickSearch} />
       </div>
 
       <div className="sim-sidebar__body">

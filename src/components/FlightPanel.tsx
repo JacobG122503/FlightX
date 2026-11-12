@@ -36,6 +36,7 @@ interface Props {
 }
 
 const PHASE_LABEL: Record<SimPhase, string> = {
+  gate: 'At the gate',
   'taxi-out': 'Taxiing out',
   climb: 'Climbing',
   cruise: 'Cruising',

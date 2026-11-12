@@ -128,6 +128,16 @@ export interface ProfileState extends LatLon {
 }
 
 /** Aircraft state at time `t`, or null before pushback / after reaching the gate. */
+/**
+ * Like `evaluate`, but before pushback the aircraft is parked at its gate (boarding, or
+ * waiting for its next flight on a connection) instead of absent.
+ */
+export function evaluateAtGate(p: Profile, from: Endpoint, to: Endpoint, t: number, seed: number): ProfileState | null {
+  if (t >= p.departAt) return evaluate(p, from, to, t, seed);
+  const st = evaluate(p, from, to, p.departAt, seed);
+  return st && { ...st, phase: 'gate', gsKt: 0, vrFpm: 0 };
+}
+
 export function evaluate(p: Profile, from: Endpoint, to: Endpoint, t: number, seed: number): ProfileState | null {
   if (t < p.departAt || t >= p.arriveAt) return null;
   const ph = p.phases.find((x) => t >= x.t0 && t < x.t1) ?? p.phases[p.phases.length - 1];

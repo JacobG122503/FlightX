@@ -15,7 +15,7 @@ export interface SimAirport {
   tz: string | null;
 }
 
-export type SimPhase = 'taxi-out' | 'climb' | 'cruise' | 'descent' | 'approach' | 'taxi-in';
+export type SimPhase = 'gate' | 'taxi-out' | 'climb' | 'cruise' | 'descent' | 'approach' | 'taxi-in';
 
 /** One flight within an itinerary (a nonstop segment). */
 export interface ItineraryLeg {

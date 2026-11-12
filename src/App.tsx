@@ -3,7 +3,6 @@ import Map, { MapProvider, useMap, type MapRef } from 'react-map-gl/maplibre';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import { FlightLayers } from './components/FlightLayers';
 import { FlightPanel } from './components/FlightPanel';
-import { TopBar } from './components/TopBar';
 import { Legend } from './components/Legend';
 import { MapControls } from './components/MapControls';
 import { SimSidebar } from './components/sim/SimSidebar';
@@ -280,7 +279,6 @@ function FlightApp() {
       </div>
 
       <div className="titlebar-drag" />
-      <TopBar count={data ? flights.length : null} error={error} flights={flights} onPick={pickFromSearch} />
 
       <div className="top-center">
         {focusOnly && selectedState && (
@@ -297,6 +295,9 @@ function FlightApp() {
         status={sim.status}
         onChanged={() => void sim.refresh()}
         onSelectFlight={selectSimFlight}
+        flights={flights}
+        onPickSearch={pickFromSearch}
+        error={error}
         view={tripView}
         onView={setTripView}
       />
