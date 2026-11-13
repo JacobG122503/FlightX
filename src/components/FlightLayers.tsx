@@ -7,6 +7,7 @@ import { useNow } from '../hooks/useNow';
 import { serverNow } from '../api';
 import { buildFlightLayers, buildRoute, buildTrail, LABEL_MAX_COUNT, LABEL_MIN_ZOOM } from '../lib/layers';
 import { extrapolate } from '../../shared/geo';
+import { usePrefetchAhead } from '../lib/prefetch';
 import { BOOM_MS, explosionLayers, onExplode, shakeMap, type Boom } from '../lib/explosion';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
 
@@ -92,6 +93,7 @@ export function FlightLayers({ flights, selectedId, selectedState, route, trail,
     if (!map || !follow || !selectedPos || performance.now() - followSince.current < 650) return;
     map.jumpTo({ center: [selectedPos.lon, selectedPos.lat] });
   }, [map, follow, selectedPos, now]);
+  usePrefetchAhead(map?.getMap(), follow, selectedState);
 
   const onHover = useCallback(
     (info: PickingInfo<FlightState>) => {

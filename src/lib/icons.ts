@@ -119,7 +119,6 @@ export const planeColor = (f: Pick<FlightState, 'onGround' | 'simRandom'>) =>
 
 export const hexRgba = (hex: string, a = 255): RGBA => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16), a];
 
-/** Icon for an aircraft: shape by kind, in the given colour. */
 /** The Walk option: shown as an emoji in the flight panel. */
 export const PERSON_EMOJI: Partial<Record<AircraftKind, string>> = { walker: '🚶', swimmer: '🏊' };
 export const isPerson = (kind: AircraftKind) => kind in PERSON_EMOJI;
@@ -139,13 +138,14 @@ const PERSON_GLYPH: Partial<Record<AircraftKind, string>> = {
     '<path d="M22 21c-1.11 0-1.73-.37-2.18-.64-.37-.22-.6-.36-1.15-.36-.56 0-.78.13-1.15.36-.46.27-1.07.64-2.18.64s-1.73-.37-2.18-.64c-.37-.22-.6-.36-1.15-.36-.56 0-.78.13-1.15.36-.46.27-1.08.64-2.19.64-1.11 0-1.73-.37-2.18-.64-.37-.23-.6-.36-1.15-.36s-.78.13-1.15.36c-.46.27-1.08.64-2.19.64v-2c.56 0 .78-.13 1.15-.36.46-.27 1.08-.64 2.19-.64s1.73.37 2.18.64c.37.23.59.36 1.15.36.56 0 .78-.13 1.15-.36.46-.27 1.08-.64 2.19-.64 1.11 0 1.73.37 2.18.64.37.22.6.36 1.15.36s.78-.13 1.15-.36c.45-.27 1.07-.64 2.18-.64s1.73.37 2.18.64c.37.23.59.36 1.15.36v2z"/>',
 };
 
-/** Pictogram on a disc in the plane colour (so yours vs random still shows); `faceRight` mirrors it. */
+/** The pictogram in the plane colour, outlined like the planes (white when selected); no background. `faceRight` mirrors it. */
 function personSvg(kind: AircraftKind, fill: string, highlight: boolean, faceRight: boolean): string {
   const flip = faceRight ? '' : ' translate(24 0) scale(-1 1)';
+  // Same outline as the planes (2.6 / 3.2 px on the 64 px icon), in the glyph's 2.25× units.
+  const ring = ` stroke="${highlight ? '#ffffff' : OUTLINE}" stroke-width="${highlight ? 1.4 : 1.15}" stroke-linejoin="round" paint-order="stroke"`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">` +
-    `<circle cx="32" cy="32" r="28" fill="${fill}" stroke="${highlight ? '#ffffff' : OUTLINE}" stroke-width="${highlight ? 4 : 3}"/>` +
-    `<g fill="#0b1018" transform="translate(13 13) scale(1.58)${flip}">${PERSON_GLYPH[kind]}</g>` +
+    `<g fill="${fill}"${ring} transform="translate(5 5) scale(2.25)${flip}">${PERSON_GLYPH[kind]}</g>` +
     `</svg>`
   );
 }
