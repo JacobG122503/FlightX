@@ -1770,6 +1770,10 @@ pre,
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.chill-hud__sub {
+  font-size: 11px;
+  color: var(--faint);
+}
 
 /* ── Edge tabs: collapsed panels as small arrows on the window's left edge ── */
 

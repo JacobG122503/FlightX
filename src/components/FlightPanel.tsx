@@ -25,6 +25,8 @@ interface Props {
   selected: SelectedFlight;
   follow: boolean;
   onFollow: (on: boolean) => void;
+  /** Double-click Follow: follow and go straight into chill mode. */
+  onChill: () => void;
   /** "Hide others": show only this aircraft and fit its whole route on screen. */
   focus: boolean;
   onFocus: (on: boolean) => void;
@@ -116,7 +118,7 @@ function Row({ label, value, sub }: { label: string; value: ReactNode; sub?: Rea
 const airportTip = (a: { name: string; city: string | null; region: string | null; country: string | null }) =>
   `${a.name} — ${[a.city, a.region !== a.city ? a.region : null, a.country].filter(Boolean).join(', ')}`;
 
-export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFocus, onZoomTo, onClose, onCrash, onNudged }: Props) {
+export function FlightPanel({ id, state, selected, follow, onFollow, onChill, focus, onFocus, onZoomTo, onClose, onCrash, onNudged }: Props) {
   const [crashArmed, setCrashArmed] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [nudgeError, setNudgeError] = useState<string | null>(null);
@@ -209,7 +211,14 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
         )}
 
         <div className="panel__actions">
-          <button className={`btn${follow ? ' is-on' : ''}`} onClick={() => onFollow(!follow)} aria-pressed={follow}>
+          <button
+            className={`btn${follow ? ' is-on' : ''}`}
+            // The second click of a double-click is ignored so the double-click doesn't toggle twice.
+            onClick={(e) => e.detail < 2 && onFollow(!follow)}
+            onDoubleClick={onChill}
+            aria-pressed={follow}
+            title="Double-click for chill mode"
+          >
             <svg viewBox="0 0 24 24"><path d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z" /></svg>
             {follow ? 'Following' : 'Follow'}
           </button>

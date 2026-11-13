@@ -118,7 +118,7 @@ function FlightApp() {
   const [tripView, setTripView] = useState<TripView>('newest');
   const sim = useSimStatus(visible, tripView);
   /** Chill mode: following a plane with no input for 30 s hides the UI (screensaver). */
-  const chill = useIdle(30_000, follow && Boolean(selectedId));
+  const [chill, chillNow] = useIdle(30_000, follow && Boolean(selectedId));
 
   const selectedState = useMemo(() => {
     if (!selectedId) return null;
@@ -312,6 +312,10 @@ function FlightApp() {
           selected={selected}
           follow={follow}
           onFollow={setFollow}
+          onChill={() => {
+            setFollow(true);
+            chillNow();
+          }}
           focus={focusOnly}
           onFocus={setFocus}
           onZoomTo={zoomTo}

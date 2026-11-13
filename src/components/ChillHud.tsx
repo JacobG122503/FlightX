@@ -1,6 +1,6 @@
 import type { FlightDetailResponse, FlightState } from '../../shared/types';
 import { useNow } from '../hooks/useNow';
-import { fmtAltitude, fmtSpeed } from '../lib/format';
+import { fmtAltitude, fmtSpeed, fmtSpeedMph } from '../lib/format';
 import { fmtMinutes, timeTz } from '../lib/time';
 
 interface Props {
@@ -54,7 +54,10 @@ export function ChillHud({ state, detail }: Props) {
       )}
       <div className="chill-hud__stats">
         <span>{fmtAltitude(state.altFt, state.onGround)}</span>
-        <span>{fmtSpeed(state.gsKt)}</span>
+        <span>
+          {fmtSpeed(state.gsKt)}
+          {state.gsKt != null && <span className="chill-hud__sub"> {fmtSpeedMph(state.gsKt)}</span>}
+        </span>
       </div>
     </div>
   );
