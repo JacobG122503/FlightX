@@ -5,8 +5,14 @@
 
 import type { SimFlightInfo } from './sim';
 
-/** Coarse aircraft class, used to pick an icon. */
-export type AircraftKind = 'heavy' | 'jet' | 'light' | 'heli' | 'glider' | 'ground' | 'unknown';
+/**
+ * Coarse aircraft class, used to pick an icon. Custom planes: `delta` = Concorde, `wing` = B-2,
+ * `needle` = X-59, `blackbird` = SR-71, `airship` = Hindenburg, `walker` / `swimmer` = Walk.
+ */
+export type AircraftKind =
+  | 'heavy' | 'jet' | 'light' | 'heli' | 'glider' | 'ground'
+  | 'delta' | 'wing' | 'needle' | 'blackbird' | 'airship' | 'walker' | 'swimmer'
+  | 'unknown';
 
 export interface FlightState {
   /** 24-bit aircraft address as lowercase hex (e.g. "a7f4e7"). Unique per airframe. */

@@ -15,7 +15,11 @@ export interface SimAirport {
   tz: string | null;
 }
 
-export type SimPhase = 'gate' | 'taxi-out' | 'climb' | 'cruise' | 'descent' | 'approach' | 'taxi-in';
+/**
+ * `supersonic` = Concorde / SR-71 at full speed; `refuel` = taking fuel from a tanker in mid-air;
+ * `walk` / `swim` = the Walk option (swimming over water).
+ */
+export type SimPhase = 'gate' | 'taxi-out' | 'climb' | 'cruise' | 'supersonic' | 'refuel' | 'descent' | 'approach' | 'taxi-in' | 'walk' | 'swim';
 
 /** One flight within an itinerary (a nonstop segment). */
 export interface ItineraryLeg {
@@ -41,35 +45,43 @@ export interface ItineraryLeg {
   cruiseFt: number;
   taxiOutMin: number;
   taxiInMin: number;
+  /** Custom planes with fuel set to Unlimited (no fuel stops or mid-air refuelling). */
+  unlimitedFuel?: boolean;
 }
 
 export interface Layover {
   airport: SimAirport;
   minutes: number;
-  /** True for a technical refuelling stop (charter flights). */
+  /** True for a refuelling stop (custom planes). */
   fuelStop: boolean;
 }
 
-export type ItineraryTag = 'best' | 'cheapest' | 'fastest';
+export type ItineraryTag = 'best' | 'fastest';
 
 export interface ItineraryOption {
   id: string;
-  /** Scheduled airline flights, or a charter sized for the group. */
-  kind: 'airline' | 'charter';
-  /** Size of the travelling group. */
-  passengers: number;
-  /** Charters: how many aircraft fly together (big groups). */
+  /** Scheduled airline flights, or one of the Custom Planes (Cessna, Concorde, B-2). */
+  kind: 'airline' | 'custom';
+  /** Passengers you chose to send (null = a realistic load for each plane). */
+  passengers: number | null;
+  /** Airline itineraries with a chosen count: how many fly on this departure. */
+  paxThisDeparture?: number;
+  /** How many planes (custom planes) or departures (airline groups too big for one flight). */
   aircraftCount: number;
-  /** Charters: why this aircraft / how many stops, e.g. "Sized for 150 passengers…". */
+  /** Extra detail, e.g. how a big group is split up. */
   note: string | null;
+  /** Airline groups too big for one flight: the later departures of the same itinerary. */
+  extraDepartures?: ItineraryOption[];
+  /** Custom planes: fuel setting this option was planned with. */
+  fuel?: 'realistic' | 'unlimited';
+  /** B-2 with realistic fuel: tanker meetups on the way. */
+  aerialRefuels?: number;
   legs: ItineraryLeg[];
   departAt: number;
   arriveAt: number;
   durationMin: number;
   stops: number;
   layovers: Layover[];
-  /** Total for the whole group. */
-  priceUsd: number;
   tags: ItineraryTag[];
 }
 
@@ -79,7 +91,29 @@ export interface PlanResponse {
   fromLabel: string | null;
   toLabel: string | null;
   options: ItineraryOption[];
+  /** Advanced mode: the Custom Planes, each planned with realistic and unlimited fuel. */
+  custom: CustomPlaneChoice[];
   error: string | null;
+}
+
+export type CustomPlaneKey = 'C172' | 'CONC' | 'B2' | 'X59' | 'SR71' | 'ZEPP' | 'WALK';
+
+/** One of the fun planes, with both fuel settings already worked out. */
+export interface CustomPlaneChoice {
+  key: CustomPlaneKey;
+  /** e.g. "Cessna 172 Skyhawk". */
+  name: string;
+  /** Short spec line, e.g. "Mach 2.04 · 100 seats · 3,900 NM range". */
+  summary: string;
+  seats: number;
+  /** Realistic fuel (stops / mid-air refuelling), or null when it can't make the trip. */
+  realistic: ItineraryOption | null;
+  /** Why realistic fuel can't make it (e.g. too much open ocean for a Cessna). */
+  unavailable: string | null;
+  /** Unlimited fuel: nonstop. */
+  unlimited: ItineraryOption;
+  /** False for Walk: no fuel, so the realistic/unlimited switch doesn't apply. */
+  fuelApplies: boolean;
 }
 
 export interface SimTripSummary {
@@ -106,51 +140,6 @@ export interface TimerResponse {
   actualMin: number;
 }
 
-export interface SeatCabin {
-  code: 'F' | 'J' | 'W' | 'Y';
-  name: string;
-  /** Seat letters with "-" for aisles, e.g. "ABC-DEF". */
-  layout: string;
-  rows: number[];
-}
-
-export interface SeatMap {
-  type: string;
-  decks: { name: string; cabins: SeatCabin[] }[];
-  capacity: number;
-}
-
-/** A passenger you add yourself when booking (Advanced mode). */
-export interface CustomPassenger {
-  name: string;
-  age: number;
-  /** Seat label like "12C"; empty = place automatically. */
-  seat: string;
-}
-
-export interface Passenger {
-  seat: string;
-  name: string;
-  age: number;
-  nationality: string;
-  nationalityName: string;
-  cabin: string;
-  custom: boolean;
-}
-
-export interface PassengerManifest {
-  flightNumber: string;
-  callsign: string;
-  from: string;
-  to: string;
-  aircraftType: string;
-  aircraftName: string;
-  seatMap: SeatMap;
-  passengers: Passenger[];
-  /** null while the flight is under way; true once landed; false if it crashed. */
-  delivered: boolean | null;
-}
-
 export interface SimLogEntry {
   id: string;
   tripId: string;
@@ -174,7 +163,6 @@ export interface SimLogEntry {
   paxSeed: number;
   paxCount: number;
   privateFlight?: boolean;
-  custom?: CustomPassenger[];
   /** Charters carry exactly this many passengers. */
   paxTarget?: number;
 }

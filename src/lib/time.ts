@@ -36,6 +36,8 @@ export function localStamp(ms: number): string {
 
 export function fmtMinutes(min: number): string {
   const total = Math.round(min);
+  // Walking trips take weeks: switch to days past 48 hours.
+  if (total >= 48 * 60) return `${Math.floor(total / 1440)}d ${Math.floor((total % 1440) / 60)}h`;
   const h = Math.floor(total / 60);
   const m = total % 60;
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;

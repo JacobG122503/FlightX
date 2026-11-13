@@ -115,6 +115,19 @@ export const AIRCRAFT: Record<string, AircraftType> = Object.fromEntries(
     T('SF34', 'Saab', '340', 'light', 250, [17000, 25000], 900, 'Saab_340', TP),
     T('B190', 'Beechcraft', '1900D', 'light', 270, [16000, 25000], 600, 'Beechcraft_1900', TP),
     T('C172', 'Cessna', '172 Skyhawk', 'light', 122, [5500, 8500], 640, 'Cessna_172', { climb1: 700, climb2: 500, descent: 500 }),
+    // Custom planes. Concorde's cruiseKt/cruiseFt are its subsonic figures (Mach ~0.95 at FL280);
+    // the Mach 2 legs over water are added by the flight profile (see custom-planes.ts).
+    T('CONC', 'Aérospatiale/BAC', 'Concorde', 'delta', 550, [27000, 29000], 3900, 'Concorde', { climb1: 4500, climb2: 3000, descent: 3000 }),
+    T('B2', 'Northrop Grumman', 'B-2 Spirit', 'wing', 485, [40000, 44000], 6000, 'Northrop_B-2_Spirit', { climb1: 3500, climb2: 2000, descent: 2500 }),
+    // NASA's quiet supersonic X-plane: Mach 1.42 at 55,000 ft (its "thump" is quiet enough for land).
+    T('X59', 'Lockheed Martin', 'X-59 QueSST', 'needle', 815, [53000, 55000], 900, 'Lockheed_Martin_X-59_Quesst', { climb1: 8000, climb2: 4500, descent: 4000 }),
+    // SR-71: cruiseKt/cruiseFt are its subsonic refuelling level; the Mach 3.2 legs at 80,000 ft are
+    // added by the flight profile (see custom-planes.ts).
+    T('SR71', 'Lockheed', 'SR-71 Blackbird', 'blackbird', 480, [25000, 26000], 2900, 'Lockheed_SR-71_Blackbird', { climb1: 6000, climb2: 4000, descent: 4000 }),
+    // Hindenburg: 76 mph cruising a few hundred feet up; range ~16,000 km.
+    T('ZEPP', 'Luftschiffbau Zeppelin', 'LZ 129 Hindenburg', 'airship', 66, [650, 900], 8600, 'LZ_129_Hindenburg', { climb1: 400, climb2: 300, descent: 400 }),
+    // Walking (3.1 mph) — swimming over water and resting overnight are handled by the flight profile.
+    T('WALK', 'Human', 'Walking', 'walker', 2.7, [0, 0], 99999, '', { climb1: 99999, climb2: 99999, descent: 99999 }),
     T('SR22', 'Cirrus', 'SR22', 'light', 183, [9500, 13500], 1000, 'Cirrus_SR22', { climb1: 1000, climb2: 700, descent: 700 }),
     T('BE20', 'Beechcraft', 'King Air 200', 'light', 289, [25000, 29000], 1500, 'Beechcraft_Super_King_Air', { climb1: 2000, climb2: 1300, descent: 1500 }),
     T('PC12', 'Pilatus', 'PC-12', 'light', 280, [24000, 28000], 1800, 'Pilatus_PC-12', { climb1: 1500, climb2: 1100, descent: 1500 }),

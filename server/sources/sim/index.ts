@@ -5,14 +5,13 @@
 import path from 'node:path';
 import { containsFn } from '../../lib/bounds';
 import type { Airport as RouteAirport, Bounds, FlightDetailResponse, FlightListResponse, FlightState, TrackResponse } from '../../../shared/types';
-import type { CrashResponse, CustomPassenger, ItineraryOption, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimFlightInfo, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
-import { mapFor, passengerCount, passengerList } from './passengers';
+import type { CrashResponse, ItineraryOption, LogFlightDetails, MissedSummary, PlanResponse, SimFlightInfo, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
+import { capacityOf, passengerCount } from './passengers';
 import { aircraftType as typeInfo } from './aircraft';
-import { person } from './names';
 import { simData, toSimAirport, distNm, type Airport } from './data';
 import { evaluateAtGate, sampleTrack } from './profile';
 import { parseTripQuery, resolvePlace } from './geocode';
-import { findOptions, randomOptions, timerOption } from './planner';
+import { customPlaneChoices, findOptions, randomOptions, timerOption } from './planner';
 import { SimStore, type LiveLeg, type StoredTrip } from './store';
 import { Rng } from './random';
 
@@ -65,7 +64,7 @@ export class SimSource {
       trackDeg: st.trackDeg,
       vrFpm: st.onGround ? 0 : st.vrFpm,
       squawk: l.leg.squawk,
-      kind: l.type.kind,
+      kind: st.phase === 'swim' ? 'swimmer' : l.type.kind,
       reg: l.leg.reg,
       typeCode: l.type.icao,
       ts: now,
@@ -111,13 +110,13 @@ export class SimSource {
       cruiseFt: l.profile.cruiseFt,
       distanceNm: Math.round(l.profile.distanceNm),
       aircraftName: `${l.type.manufacturer} ${l.type.name}`,
-      wikipediaTitle: l.type.wiki,
+      wikipediaTitle: l.type.wiki || null,
       origin: toSimAirport(l.from),
       destination: toSimAirport(l.to),
       finalDestination: toSimAirport(last.to),
       nextLeg: next ? { flightNumber: next.leg.flightNumber, from: toSimAirport(next.from), to: toSimAirport(next.to), departAt: next.profile.departAt } : null,
       passengers: passengerCount(this.store.paxInput(l)),
-      capacity: mapFor(this.store.paxInput(l)).capacity,
+      capacity: capacityOf(this.store.paxInput(l)),
     };
     return {
       id,
@@ -170,47 +169,49 @@ export class SimSource {
   }
 
   // ── Simulation actions ───────────────────────────────────────────────────
-  plan(query: string, advanced: boolean, passengers = 1): PlanResponse {
+  /** `passengers`: send exactly this many (Advanced mode), or null for a realistic load. */
+  plan(query: string, advanced: boolean, passengers: number | null = null): PlanResponse {
     const parts = parseTripQuery(query);
-    const empty = (error: string, fromLabel: string | null = null, toLabel: string | null = null): PlanResponse => ({ query, fromLabel, toLabel, options: [], error });
+    const empty = (error: string, fromLabel: string | null = null, toLabel: string | null = null): PlanResponse => ({ query, fromLabel, toLabel, options: [], custom: [], error });
     if (!parts) return empty('Type a trip like “Iowa to Florida” or “Iowa City to Miami”.');
     const from = resolvePlace(parts.from);
     const to = resolvePlace(parts.to);
     if (!from) return empty(`Couldn’t find a place called “${parts.from}”.`, null, to?.label ?? null);
     if (!to) return empty(`Couldn’t find a place called “${parts.to}”.`, from.label, null);
     if (!from.airports.length || !to.airports.length) return empty('No airports with airline service found there.', from.label, to.label);
-    const options = findOptions(from, to, { advanced, now: Date.now(), rng: new Rng(), passengers: Math.max(1, Math.min(5000, Math.floor(passengers) || 1)) });
-    if (!options.length) return empty('Those are the same airport — pick two different places.', from.label, to.label);
+    const group = passengers && passengers > 0 ? Math.floor(passengers) : null;
+    const rng = new Rng();
+    const options = findOptions(from, to, { advanced, now: Date.now(), rng, passengers: group });
+    // Advanced mode also offers the Custom Planes (Cessna, Concorde, B-2).
+    const custom = advanced ? customPlaneChoices(from, to, group, Date.now(), rng) : [];
+    if (!options.length && !custom.length) {
+      const same = from.airports.length === 1 && to.airports.length === 1 && from.airports[0] === to.airports[0];
+      return empty(same ? 'Those are the same airport — pick two different places.' : 'No airline flies between those places. Try Advanced mode for the Custom Planes.', from.label, to.label);
+    }
     const now = Date.now();
     for (const [id, c] of this.planCache) if (now - c.at > PLAN_TTL_MS) this.planCache.delete(id);
-    for (const opt of options) this.planCache.set(opt.id, { opt, query, at: now });
-    return { query, fromLabel: from.label, toLabel: to.label, options, error: null };
+    const cache = (opt: ItineraryOption | null) => opt && this.planCache.set(opt.id, { opt, query, at: now });
+    for (const opt of options) cache(opt);
+    for (const c of custom) {
+      cache(c.realistic);
+      cache(c.unlimited);
+    }
+    return { query, fromLabel: from.label, toLabel: to.label, options, custom, error: null };
   }
 
-  book(optionId: string, passengers: CustomPassenger[] = []): SimTripSummary {
+  book(optionId: string): SimTripSummary {
     const cached = this.planCache.get(optionId);
     if (!cached) throw new Error('That option has expired — search again.');
-    const custom = passengers.filter((p) => p && typeof p.name === 'string').slice(0, 5000);
-    const [trip] = this.store.add([cached.opt], { random: false, query: cached.query, startAt: Date.now(), passengers: custom });
-    return this.summary(trip, Date.now());
-  }
-
-  /** Everyone on board a flight that's currently running. */
-  passengers(flightId: string): PassengerManifest | null {
-    const l = this.store.find(flightId);
-    if (!l) return null;
-    const input = this.store.paxInput(l);
-    return {
-      flightNumber: l.leg.flightNumber,
-      callsign: l.leg.callsign,
-      from: l.from.iata,
-      to: l.to.iata,
-      aircraftType: l.type.icao,
-      aircraftName: `${l.type.manufacturer} ${l.type.name}`,
-      seatMap: mapFor(input),
-      passengers: passengerList(input),
-      delivered: null,
-    };
+    const now = Date.now();
+    const opt = cached.opt;
+    const departures = [opt, ...(opt.extraDepartures ?? [])];
+    if (departures.length === 1) {
+      const [trip] = this.store.add([opt], { random: false, query: cached.query, startAt: now });
+      return this.summary(trip, now);
+    }
+    // More passengers than one plane holds: one trip per departure.
+    const trips = departures.map((dep) => this.store.add([dep], { random: false, query: cached.query, startAt: now + (dep.departAt - opt.departAt) })[0]);
+    return this.summary(trips[0], now);
   }
 
   /** Everything known about a finished flight in the log. */
@@ -228,29 +229,6 @@ export class SimSource {
       aircraftName: t ? `${t.manufacturer} ${t.name}` : e.aircraftType,
       airline: e.airline,
       distanceNm: from && to ? Math.round(distNm(from, to)) : null,
-    };
-  }
-
-  /** Passengers of a finished flight from the flight log (regenerated from its seed). */
-  logPassengers(entryId: string): PassengerManifest | null {
-    const e = this.store.log.find((x) => x.id === entryId);
-    if (!e) return null;
-    const d = simData();
-    const from = d.byIata.get(e.from);
-    const to = d.byIata.get(e.to);
-    if (!from || !to) return null;
-    const t = typeInfo(e.aircraftType);
-    const input = { seed: e.paxSeed, type: e.aircraftType, kind: t?.kind ?? 'jet', privateFlight: Boolean(e.privateFlight), custom: e.custom ?? [], from, to, target: e.paxTarget };
-    return {
-      flightNumber: e.flightNumber,
-      callsign: e.callsign,
-      from: e.from,
-      to: e.to,
-      aircraftType: e.aircraftType,
-      aircraftName: t ? `${t.manufacturer} ${t.name}` : e.aircraftType,
-      seatMap: mapFor(input),
-      passengers: passengerList(input),
-      delivered: e.outcome === 'landed',
     };
   }
 
@@ -277,18 +255,6 @@ export class SimSource {
       stillFlyingTotal: trips.length,
       stillFlyingYours: trips.filter((t) => !t.random).length,
     };
-  }
-
-  seatMapFor(type: string, charter: boolean): SeatMap {
-    const t = typeInfo(type);
-    return mapFor({ type: t?.icao ?? type, kind: t?.kind ?? 'jet', privateFlight: charter });
-  }
-
-  randomPerson(): { name: string; age: number } {
-    const d = simData();
-    const a = d.flyable[Math.floor(Math.random() * Math.min(400, d.flyable.length))];
-    const p = person(a.country, a.country, new Rng());
-    return { name: p.name, age: p.age < 18 ? p.age + 18 : p.age };
   }
 
   /** Simple mode: plan and immediately send the best match. */

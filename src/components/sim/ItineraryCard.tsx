@@ -5,35 +5,36 @@ import { airportTimeTip, dayOffset, fmtMinutes, timeTz } from '../../lib/time';
 const place = (a: SimAirport) => a.city?.split(',')[0] ?? a.iata;
 const airportTip = (a: SimAirport) => `${a.name}${a.city ? ` — ${a.city.split(',')[0]}` : ''}`;
 
-const TAG_LABEL = { best: 'Best match', cheapest: 'Cheapest', fastest: 'Fastest' } as const;
+const TAG_LABEL = { best: 'Best match', fastest: 'Fastest' } as const;
 
 interface Props {
   option: ItineraryOption;
   busy: boolean;
   onFly: () => void;
-  customCount: number;
-  onPassengers: () => void;
 }
 
 /** One result, laid out like a flight-booking site. */
-export function ItineraryCard({ option: o, busy, onFly, customCount, onPassengers }: Props) {
+export function ItineraryCard({ option: o, busy, onFly }: Props) {
   const first = o.legs[0];
   const last = o.legs[o.legs.length - 1];
   const plusDays = dayOffset(o.departAt, null, o.arriveAt, null);
   const airlines = [...new Set(o.legs.map((l) => (l.operatedBy ? `${l.airline.name} (${l.operatedBy})` : l.airline.name)))].join(' + ');
   const aircraft = [...new Set(o.legs.map((l) => l.aircraftName.replace(/^(Boeing|Airbus|Embraer|Bombardier) /, '')))].join(', ');
   const best = o.tags.includes('best');
+  const custom = o.kind === 'custom';
 
   return (
-    <div className={`itin${best ? ' is-best' : ''}${o.kind === 'charter' ? ' is-private' : ''}`}>
-      {(o.tags.length > 0 || o.kind === 'charter') && (
+    <div className={`itin${best ? ' is-best' : ''}${custom ? ' is-private' : ''}`}>
+      {(o.tags.length > 0 || o.aircraftCount > 1) && (
         <div className="itin__tags">
           {o.tags.map((t) => (
             <span key={t} className={`itin__tag itin__tag--${t}`}>
               {TAG_LABEL[t]}
             </span>
           ))}
-          {o.kind === 'charter' && <span className="itin__tag itin__tag--private">{o.aircraftCount > 1 ? `Charter · ${o.aircraftCount} planes` : 'Charter'}</span>}
+          {o.aircraftCount > 1 && (
+            <span className="itin__tag itin__tag--private">{custom ? `${o.aircraftCount} planes` : `${o.aircraftCount} departures`}</span>
+          )}
         </div>
       )}
       <div className="itin__times">
@@ -54,7 +55,9 @@ export function ItineraryCard({ option: o, busy, onFly, customCount, onPassenger
           </div>
           <div className={`itin__stops${o.stops === 0 ? ' is-nonstop' : ''}`}>
             {o.stops === 0
-              ? 'Nonstop'
+              ? o.aerialRefuels
+                ? `Nonstop · ${o.aerialRefuels} mid-air refuel${o.aerialRefuels === 1 ? '' : 's'}`
+                : 'Nonstop'
               : o.layovers.map((l, i) => (
                   <span key={i}>
                     {i > 0 && ' · '}
@@ -80,14 +83,8 @@ export function ItineraryCard({ option: o, busy, onFly, customCount, onPassenger
       </div>
       {o.note && <div className="itin__note">{o.note}</div>}
       <div className="itin__foot">
-        <button className="itin__pax" onClick={onPassengers} title="Add your own passengers and choose seats">
-          {customCount ? `${customCount} named` : 'Add passengers'}
-        </button>
-        <span className="itin__flights">{o.kind === 'charter' ? '' : o.legs.map((l) => l.flightNumber).join(' · ')}</span>
-        <span className="itin__price" title={o.passengers > 1 ? `$${Math.round(o.priceUsd / o.passengers).toLocaleString()} per person` : undefined}>
-          ${o.priceUsd.toLocaleString()}
-          {o.passengers > 1 && <small> total</small>}
-        </span>
+        <span className="itin__pax-count">{o.passengers ? `${o.passengers.toLocaleString()} passenger${o.passengers === 1 ? '' : 's'}` : ''}</span>
+        <span className="itin__flights">{custom ? '' : o.legs.map((l) => l.flightNumber).join(' · ')}</span>
         <button className="itin__fly" onClick={onFly} disabled={busy}>
           Fly this
         </button>

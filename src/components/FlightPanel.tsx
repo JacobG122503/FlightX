@@ -3,20 +3,19 @@ import type { AircraftPhoto, FlightState } from '../../shared/types';
 import type { SimPhase } from '../../shared/sim';
 import { airportTimeTip, timeTz } from '../lib/time';
 import { api } from '../api';
-import { PassengerModal } from './passengers/PassengerModal';
 import type { SelectedFlight } from '../hooks/useFlightDetail';
 import { useNow } from '../hooks/useNow';
 import { extrapolate, haversineKm } from '../../shared/geo';
-import { planeColor } from '../lib/icons';
+import { PERSON_EMOJI, planeColor } from '../lib/icons';
 import {
   fmtAltitude,
-  fmtAltitudeMeters,
   fmtCoord,
   fmtDuration,
   fmtHeading,
-  fmtKm,
+  fmtMiFromKm,
+  fmtMiFromNm,
   fmtSpeed,
-  fmtSpeedKmh,
+  fmtSpeedMph,
   fmtVerticalRate,
 } from '../lib/format';
 
@@ -39,6 +38,10 @@ interface Props {
 
 const PHASE_LABEL: Record<SimPhase, string> = {
   gate: 'At the gate',
+  supersonic: 'Supersonic cruise',
+  refuel: 'Refueling from a tanker',
+  walk: 'Walking',
+  swim: 'Swimming',
   'taxi-out': 'Taxiing out',
   climb: 'Climbing',
   cruise: 'Cruising',
@@ -47,7 +50,7 @@ const PHASE_LABEL: Record<SimPhase, string> = {
   'taxi-in': 'Taxiing to the gate',
 };
 
-function Photo({ photo, loading, alt }: { photo: AircraftPhoto | null; loading: boolean; alt: string }) {
+function Photo({ photo, loading, alt, emoji }: { photo: AircraftPhoto | null; loading: boolean; alt: string; emoji?: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -55,6 +58,14 @@ function Photo({ photo, loading, alt }: { photo: AircraftPhoto | null; loading: 
     setSrc(photo ? (photo.large ?? photo.thumbnail) : null);
     setFailed(false);
   }, [photo]);
+
+  if (emoji) {
+    return (
+      <div className="photo photo--emoji" aria-label={alt}>
+        <span>{emoji}</span>
+      </div>
+    );
+  }
 
   if (!photo || failed || !src) {
     return (
@@ -107,7 +118,6 @@ const airportTip = (a: { name: string; city: string | null; region: string | nul
 
 export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFocus, onZoomTo, onClose, onCrash, onNudged }: Props) {
   const [crashArmed, setCrashArmed] = useState(false);
-  const [showPax, setShowPax] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [nudgeError, setNudgeError] = useState<string | null>(null);
   useEffect(() => {
@@ -148,7 +158,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
   return (
     <aside className="panel panel--right glass" aria-label={`Details for ${title}`}>
       <div className="panel__media">
-        <Photo photo={photo} loading={photoLoading} alt={`${typeCode ?? 'Aircraft'} ${reg ?? ''}`.trim()} />
+        <Photo photo={photo} loading={photoLoading} alt={`${typeCode ?? 'Aircraft'} ${reg ?? ''}`.trim()} emoji={state ? PERSON_EMOJI[state.kind] : undefined} />
         <button className="panel__close" aria-label="Close" onClick={onClose}>
           <svg viewBox="0 0 24 24"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z" /></svg>
         </button>
@@ -187,9 +197,9 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
                   </svg>
                 </div>
                 <div className="route__stats">
-                  <span>{fmtKm(progress.flownKm)} flown</span>
+                  <span>{fmtMiFromKm(progress.flownKm)} flown</span>
                   {progress.etaMin != null && <span className="route__eta">~{fmtDuration(progress.etaMin)} left</span>}
-                  <span>{fmtKm(progress.leftKm)} to go</span>
+                  <span>{fmtMiFromKm(progress.leftKm)} to go</span>
                 </div>
               </>
             )}
@@ -266,14 +276,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
             <dl className="grid">
               <Row
                 label="Passengers"
-                value={
-                  <>
-                    {sim.passengers.toLocaleString()}
-                    <button className="link-btn seatmap-btn" onClick={() => setShowPax(true)}>
-                      Seat map
-                    </button>
-                  </>
-                }
+                value={sim.passengers.toLocaleString()}
                 sub={`of ${sim.capacity.toLocaleString()} seats`}
               />
               <Row label="Phase" value={PHASE_LABEL[sim.phase]} />
@@ -293,7 +296,7 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
                 sub={sim.destination.iata}
               />
               <Row label="Leg" value={`${sim.legIndex + 1} of ${sim.legCount}`} sub={sim.legCount > 1 ? `to ${sim.finalDestination.iata}` : undefined} />
-              <Row label="Cruise" value={`FL${Math.round(sim.cruiseFt / 100)}`} sub={`${sim.distanceNm.toLocaleString()} NM`} />
+              <Row label="Cruise" value={sim.cruiseFt >= 18000 ? `FL${Math.round(sim.cruiseFt / 100)}` : sim.cruiseFt > 0 ? `${sim.cruiseFt.toLocaleString()} ft` : 'Ground level'} sub={fmtMiFromNm(sim.distanceNm)} />
               {sim.nextLeg && (
                 <Row
                   label="Next flight"
@@ -321,10 +324,9 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
                     {fmtAltitude(state.altFt, state.onGround)}
                   </>
                 }
-                sub={fmtAltitudeMeters(state.altFt, state.onGround)}
               />
               <Row label="Vertical speed" value={fmtVerticalRate(state.vrFpm)} />
-              <Row label="Ground speed" value={fmtSpeed(state.gsKt)} sub={fmtSpeedKmh(state.gsKt)} />
+              <Row label="Ground speed" value={fmtSpeed(state.gsKt)} sub={fmtSpeedMph(state.gsKt)} />
               <Row label="Track" value={fmtHeading(state.trackDeg)} />
               <Row label="Latitude" value={pos ? fmtCoord(pos.lat, 'N', 'S') : '—'} />
               <Row label="Longitude" value={pos ? fmtCoord(pos.lon, 'E', 'W') : '—'} />
@@ -353,7 +355,6 @@ export function FlightPanel({ id, state, selected, follow, onFollow, focus, onFo
           </dl>
         </section>
       </div>
-      {showPax && <PassengerModal load={() => api.sim.passengers(id)} onClose={() => setShowPax(false)} />}
     </aside>
   );
 }

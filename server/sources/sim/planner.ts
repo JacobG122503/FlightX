@@ -1,19 +1,19 @@
 /**
  * Trip planning, like a flight-booking site: finds nonstop, one-stop and
- * two-stop itineraries on the real airline network (OpenFlights), keeps
- * airlines/alliances consistent, schedules realistic connections, prices each
- * option and picks a "Best match" — plus a private-charter option that makes
- * refuelling stops when the distance is beyond the jet's range.
+ * two-stop itineraries on the real airline network, keeps airlines/alliances
+ * consistent, schedules realistic connections and picks a "Best match" — plus
+ * the Custom Planes (Cessna, Concorde, B-2, X-59) with fuel stops as needed.
  */
 import { bearingDeg, intermediatePoint } from '../../../shared/geo';
 import type { Airline } from '../../../shared/types';
-import type { ItineraryLeg, ItineraryOption, Layover } from '../../../shared/sim';
+import type { CustomPlaneChoice, ItineraryLeg, ItineraryOption, Layover } from '../../../shared/sim';
 import { simData, distNm, toSimAirport, type Airport, type AirlineRec, type SimData } from './data';
 import { AIRCRAFT, cruiseAltitude, typeFromFleet, type AircraftType } from './aircraft';
-import { seatMap } from './seatmaps';
+import { seatCapacity } from './seatmaps';
 import { buildProfile } from './profile';
 import { baseTaxiMin } from './runways';
 import { Rng, newId } from './random';
+import { b2RefuelCount, CUSTOM_PLANES, sr71MidRefuels, type CustomPlaneSpec } from './custom-planes';
 import type { Place } from './geocode';
 
 const ALLIANCES: Record<string, string[]> = {
@@ -21,12 +21,13 @@ const ALLIANCES: Record<string, string[]> = {
   oneworld: ['AA', 'BA', 'CX', 'AY', 'IB', 'JL', 'MH', 'QF', 'QR', 'RJ', 'AT', 'UL', 'AS', 'US', 'LA', 'S7'],
   SkyTeam: ['SU', 'AR', 'AM', 'UX', 'AF', 'CI', 'MU', 'OK', 'DL', 'GA', 'KQ', 'KL', 'KE', 'ME', 'SV', 'RO', 'VN', 'MF', 'AZ', 'CZ'],
 };
-const LOW_COST = new Set(['G4', 'NK', 'F9', 'WN', 'B6', 'FR', 'U2', 'W6', 'VY', 'TO', 'HV', 'DY', 'SY', 'AK', '6E', 'TR', 'JQ', 'G3', 'VB', 'Y4', '5J', 'SG', 'FZ', 'XY', 'WS', 'D8', 'EW', 'LS', 'PC', 'MM', 'GK', 'QZ', '7C', 'ZE', 'LJ', 'BC', 'FD', 'VX']);
 /** Point-to-point carriers that don't sell connecting itineraries. */
 const POINT_TO_POINT = new Set(['G4', 'SY', 'XP', 'MX']);
-const PREMIUM = new Set(['EK', 'QR', 'SQ', 'CX', 'EY', 'NH', 'JL', 'LX', 'BA', 'AF', 'LH', 'QF']);
 
 type Path = Airport[];
+
+/** Big airline groups: one departure of the same itinerary every this often. */
+const GROUP_DEPARTURE_GAP_MS = 45 * 60_000;
 
 /** Fast weighted picks over many items (cumulative sums + binary search). */
 class WeightedPicker<T> {
@@ -122,13 +123,25 @@ interface Operation {
   operatedBy: string | null;
 }
 
-function buildLeg(o: Airport, dst: Airport, airline: Airline, type: AircraftType, departAt: number, rng: Rng, privateFlight = false, op: Operation = { operator: null, operatedBy: null }): ItineraryLeg {
+function buildLeg(
+  o: Airport,
+  dst: Airport,
+  airline: Airline,
+  type: AircraftType,
+  departAt: number,
+  rng: Rng,
+  privateFlight = false,
+  op: Operation = { operator: null, operatedBy: null },
+  unlimitedFuel = false,
+): ItineraryLeg {
   const distance = distNm(o, dst);
   const cruise = cruiseAltitude(type, bearingDeg(o, dst), distance, rng);
   // Lone-plane taxi times; the store adds runway queueing when the flight is booked.
-  const taxiOutMin = baseTaxiMin(o, rng);
-  const taxiInMin = baseTaxiMin(dst, rng);
-  const prof = buildProfile({ from: o, to: dst, type, cruiseFt: cruise, departAt, taxiOutMin, taxiInMin });
+  // Walkers just set off (no taxiing).
+  const walking = type.icao === 'WALK';
+  const taxiOutMin = walking ? 0 : baseTaxiMin(o, rng);
+  const taxiInMin = walking ? 0 : baseTaxiMin(dst, rng);
+  const prof = buildProfile({ from: o, to: dst, type, cruiseFt: cruise, departAt, taxiOutMin, taxiInMin, unlimitedFuel });
   const num = type.regional ? rng.int(3000, 5999) : rng.int(1, 2999);
   const code = airline.iata ?? airline.icao ?? 'ZZ';
   return {
@@ -149,6 +162,7 @@ function buildLeg(o: Airport, dst: Airport, airline: Airline, type: AircraftType
     cruiseFt: prof.cruiseFt,
     taxiOutMin,
     taxiInMin,
+    ...(unlimitedFuel ? { unlimitedFuel: true } : {}),
   };
 }
 
@@ -158,26 +172,11 @@ function connectionMinutes(prev: ItineraryLeg, next: { from: Airport; to: Airpor
   return international ? rng.int(7, 10) : rng.int(5, 10);
 }
 
-function priceFor(legs: ItineraryLeg[], stops: number, rng: Rng): number {
-  const first = legs[0].from;
-  const last = legs[legs.length - 1].to;
-  const miles = distNm(first, last) * 1.15078;
-  const international = first.country !== last.country;
-  let fare = international ? 160 + 0.085 * miles : 49 + 0.125 * miles;
-  fare *= stops === 0 ? 1.12 : 1 - 0.06 * stops;
-  const codes = legs.map((l) => l.airline.iata ?? '');
-  if (codes.every((c) => LOW_COST.has(c))) fare *= 0.68;
-  if (codes.some((c) => PREMIUM.has(c))) fare *= 1.1;
-  fare *= 0.85 + rng.next() * 0.32;
-  return Math.max(39, Math.round(fare));
-}
-
 function finish(
   kind: ItineraryOption['kind'],
   legs: ItineraryLeg[],
   layovers: Layover[],
-  priceUsd: number,
-  group: { passengers: number; aircraftCount?: number; note?: string | null } = { passengers: 1 },
+  group: { passengers: number | null; aircraftCount?: number; note?: string | null } = { passengers: null },
 ): ItineraryOption {
   const departAt = legs[0].departAt;
   const arriveAt = legs[legs.length - 1].arriveAt;
@@ -193,12 +192,12 @@ function finish(
     durationMin: Math.round((arriveAt - departAt) / 60_000),
     stops: legs.length - 1,
     layovers,
-    priceUsd,
     tags: [],
   };
 }
 
-function airlineOption(d: SimData, path: Path, variant: { codes: string[] }, start: number, rng: Rng, passengers = 1): ItineraryOption {
+/** `types`: aircraft per leg to use (later departures of a big group fly the same planes). */
+function airlineOption(d: SimData, path: Path, variant: { codes: string[] }, start: number, rng: Rng, types?: string[]): ItineraryOption {
   const legs: ItineraryLeg[] = [];
   const layovers: Layover[] = [];
   let t = start;
@@ -210,7 +209,9 @@ function airlineOption(d: SimData, path: Path, variant: { codes: string[] }, sta
     const operator = info.operators.get(code) ?? code;
     const airline = airlineOf(d.airlines.get(code), code);
     const opRec = d.airlines.get(operator);
-    const type = typeFromFleet(d.fleets.get(operator) ?? (airline.icao ? d.fleets.get(airline.icao) : undefined), distNm(o, dst), rng);
+    const type =
+      (types?.[i] && AIRCRAFT[types[i]]) ||
+      typeFromFleet(d.fleets.get(operator) ?? (airline.icao ? d.fleets.get(airline.icao) : undefined), distNm(o, dst), rng);
     const operatedBy = opRec && opRec.icao && opRec.icao !== airline.icao ? opRec.name : null;
     if (i > 0) {
       const wait = connectionMinutes(legs[i - 1], { from: o, to: dst }, rng);
@@ -221,57 +222,46 @@ function airlineOption(d: SimData, path: Path, variant: { codes: string[] }, sta
     legs.push(leg);
     t = leg.arriveAt;
   }
-  return finish('airline', legs, layovers, priceFor(legs, legs.length - 1, rng) * passengers, { passengers });
+  return finish('airline', legs, layovers);
 }
 
-/** Charter fleet: aircraft that can be chartered, small to huge. */
-const CHARTER_FLEET = ['C172', 'SR22', 'BE20', 'PC12', 'E55P', 'CL35', 'GLF6', 'E75L', 'A20N', 'B38M', 'A21N', 'B752', 'B763', 'B788', 'B789', 'A359', 'B77W', 'B748', 'A388'];
-/** Rough charter cost per block hour (USD) by type. */
-const HOURLY: Record<string, number> = {
-  C172: 250, SR22: 650, BE20: 2800, PC12: 2600,
-  E55P: 4800, CL35: 7800, GLF6: 13500, E75L: 7500, A20N: 12500, B38M: 12500, A21N: 14000, B752: 15000,
-  B763: 22000, B788: 24000, B789: 26000, A359: 28000, B77W: 31000, B748: 36000, A388: 42000,
-};
-
-/** Airports for fuel stops along the great circle, adding stops until every leg is within range. */
-function fuelStops(d: SimData, o: Airport, dst: Airport, type: AircraftType): Airport[] {
+/**
+ * Airports for fuel stops along the great circle, adding stops until every leg is within
+ * `rangeNm`. Null when the trip can't be done (e.g. a Cessna facing open ocean).
+ */
+function fuelStops(d: SimData, o: Airport, dst: Airport, rangeNm: number, minWeight: number): Airport[] | null {
   const total = distNm(o, dst);
-  // Airliners need proper airports for a fuel stop; business jets can use small ones.
-  const minWeight = type.kind === 'heavy' ? 30 : ['C172', 'SR22', 'BE20', 'PC12', 'E55P', 'CL35', 'GLF6'].includes(type.icao) ? 3 : 12;
-  let stops = Math.max(0, Math.ceil(total / (type.rangeNm * 0.85)) - 1);
-  for (; stops <= 8; stops++) {
+  const pool = d.flyable.filter((a) => a.weight >= minWeight);
+  // rangeNm already keeps a fuel reserve.
+  let stops = Math.max(0, Math.ceil(total / rangeNm) - 1);
+  for (; stops <= 12; stops++) {
     const points: Airport[] = [o];
     for (let i = 1; i <= stops; i++) {
       const target = intermediatePoint(o, dst, i / (stops + 1));
-      points.push(
-        d.flyable
-          .filter((a) => a.weight >= minWeight && !points.includes(a) && a !== dst)
-          .reduce((best, a) => (distNm(a, target) < distNm(best, target) ? a : best)),
-      );
+      points.push(pool.filter((a) => !points.includes(a) && a !== dst).reduce((best, a) => (distNm(a, target) < distNm(best, target) ? a : best)));
     }
     points.push(dst);
     const longest = Math.max(...points.slice(1).map((p, i) => distNm(points[i], p)));
-    if (longest <= type.rangeNm * 0.95) return points;
+    if (longest <= rangeNm) return points;
   }
-  return hopToward(d, o, dst, type, minWeight) ?? [o, dst];
+  return hopToward(d, o, dst, rangeNm, minWeight);
 }
 
 /**
  * Fallback for trips the straight-line plan can't handle, e.g. airports on nearly opposite
- * sides of the Earth (no single great-circle path): repeatedly fly to the airport within
- * range that gets closest to the destination.
+ * sides of the Earth (no single great-circle path) or island-hopping: repeatedly fly to the
+ * airport within range that gets closest to the destination.
  */
-function hopToward(d: SimData, o: Airport, dst: Airport, type: AircraftType, minWeight: number): Airport[] | null {
-  const reach = type.rangeNm * 0.9;
+function hopToward(d: SimData, o: Airport, dst: Airport, rangeNm: number, minWeight: number): Airport[] | null {
   const pool = d.flyable.filter((a) => a.weight >= minWeight);
   const points = [o];
   let at = o;
-  for (let hop = 0; hop < 40; hop++) {
-    if (distNm(at, dst) <= reach) return [...points, dst];
+  for (let hop = 0; hop < 60; hop++) {
+    if (distNm(at, dst) <= rangeNm) return [...points, dst];
     let next: Airport | null = null;
     let nextLeft = distNm(at, dst);
     for (const a of pool) {
-      if (a === at || points.includes(a) || distNm(at, a) > reach) continue;
+      if (a === at || points.includes(a) || distNm(at, a) > rangeNm) continue;
       const left = distNm(a, dst);
       if (left < nextLeft) {
         next = a;
@@ -285,67 +275,76 @@ function hopToward(d: SimData, o: Airport, dst: Airport, type: AircraftType, min
   return null;
 }
 
-function charterOption(d: SimData, o: Airport, dst: Airport, type: AircraftType, passengers: number, start: number, rng: Rng, why: string): ItineraryOption {
-  const capacity = seatMap(type.icao, type.kind, true).capacity;
-  const aircraftCount = Math.ceil(passengers / capacity);
-  const points = fuelStops(d, o, dst, type);
-  const charter: Airline = { name: type.kind === 'heavy' || capacity > 20 ? 'Charter flight' : 'Private charter', iata: null, icao: null };
+/** One custom plane flown through the given airports (fuel stops in between). */
+function customOption(spec: CustomPlaneSpec, points: Airport[], fuel: 'realistic' | 'unlimited', passengers: number | null, start: number, rng: Rng): ItineraryOption {
+  const type = AIRCRAFT[spec.type];
+  const operator: Airline = { name: spec.operator, iata: null, icao: null };
+  const aircraftCount = passengers ? Math.ceil(passengers / spec.seats) : 1;
   const legs: ItineraryLeg[] = [];
   const layovers: Layover[] = [];
   let t = start;
   for (let i = 0; i < points.length - 1; i++) {
     if (i > 0) {
-      // Refuelling is capped at 10 minutes too, then it's back into the taxi queue.
-      const wait = type.kind === 'heavy' ? rng.int(8, 10) : rng.int(5, 8);
+      // Refuelling takes at most 10 minutes, then it's back into the taxi queue.
+      const wait = spec.key === 'C172' ? rng.int(5, 8) : rng.int(8, 10);
       layovers.push({ airport: toSimAirport(points[i]), minutes: wait, fuelStop: true });
       t += wait * 60_000;
     }
-    const leg = buildLeg(points[i], points[i + 1], charter, type, t, rng, true);
+    const leg = buildLeg(points[i], points[i + 1], operator, type, t, rng, true, { operator: null, operatedBy: null }, fuel === 'unlimited');
     legs.push(leg);
     t = leg.arriveAt;
   }
-  const hours = legs.reduce((h, l) => h + (l.arriveAt - l.departAt) / 3_600_000, 0);
-  const price = Math.round((aircraftCount * (HOURLY[type.icao] ?? 15000) * hours + (points.length - 2) * 2500 * aircraftCount) / 100) * 100;
-  const stops = points.length - 2;
-  const planes = aircraftCount > 1 ? `${aircraftCount} × ${type.manufacturer} ${type.name}` : `${type.manufacturer} ${type.name}`;
-  const note = `${why}: ${planes} (${capacity} seats${aircraftCount > 1 ? ' each' : ''}) for ${passengers.toLocaleString()} passenger${passengers === 1 ? '' : 's'} · ${
-    stops === 0 ? 'nonstop' : `${stops} fuel stop${stops === 1 ? '' : 's'}`
-  } (range ${type.rangeNm.toLocaleString()} NM)`;
-  return finish('charter', legs, layovers, price, { passengers, aircraftCount, note });
+  const total = distNm(points[0], points[points.length - 1]);
+  const aerialRefuels = fuel !== 'realistic' ? 0 : spec.key === 'B2' ? b2RefuelCount(total) : spec.key === 'SR71' ? 1 + sr71MidRefuels(total) : 0;
+  const note = aircraftCount > 1 ? `${aircraftCount} × ${spec.name} for ${(passengers ?? 0).toLocaleString()} people` : null;
+  const opt = finish('custom', legs, layovers, { passengers, aircraftCount, note });
+  return { ...opt, fuel, ...(aerialRefuels ? { aerialRefuels } : {}) };
 }
 
-/**
- * Charters sized for the group: the smallest aircraft whose cabin fits everyone
- * (stopping for fuel as its range requires), and a longer-range one if that
- * means fewer stops. Groups bigger than any aircraft are split across planes.
- */
-function charterOptions(d: SimData, o: Airport, dst: Airport, passengers: number, start: number, rng: Rng): ItineraryOption[] {
-  const total = distNm(o, dst);
-  const fleet = CHARTER_FLEET.map((c) => AIRCRAFT[c]).map((type) => ({
-    type,
-    capacity: seatMap(type.icao, type.kind, true).capacity,
-    stops: Math.max(0, Math.ceil(total / (type.rangeNm * 0.85)) - 1),
-  }));
-  const biggest = Math.max(...fleet.map((f) => f.capacity));
-  const fits = fleet.filter((f) => f.capacity >= Math.min(passengers, biggest));
-  // Smallest cabin that fits; among equal sizes, the faster aircraft.
-  const smallest = fits.reduce((m, f) => (f.capacity < m.capacity || (f.capacity === m.capacity && f.type.cruiseKt > m.type.cruiseKt) ? f : m));
-  const out = [charterOption(d, o, dst, smallest.type, passengers, start, rng, 'Sized for your group')];
-  const fewerStops = fits.filter((f) => f.stops < smallest.stops).sort((a, b) => a.stops - b.stops || a.capacity - b.capacity)[0];
-  if (fewerStops) out.push(charterOption(d, o, dst, fewerStops.type, passengers, start, rng, 'Fewer stops'));
+/** The Custom Planes for a trip, each planned with realistic fuel (stops) and unlimited fuel (nonstop). */
+export function customPlaneChoices(from: Place, to: Place, passengers: number | null, now: number, rng: Rng): CustomPlaneChoice[] {
+  const d = simData();
+  const out: CustomPlaneChoice[] = [];
+  for (const spec of CUSTOM_PLANES) {
+    // Any airport will do: no runway-length limits for the fun planes.
+    const o = from.airports[0];
+    const dst = to.airports[0];
+    if (!o || !dst || o === dst) continue;
+    let realistic: ItineraryOption | null = null;
+    let unavailable: string | null = null;
+    if (spec.key === 'B2' || spec.key === 'SR71' || spec.key === 'WALK') {
+      // The B-2 and SR-71 refuel from tankers in mid-air; walkers don't need fuel at all.
+      realistic = customOption(spec, [o, dst], 'realistic', passengers, now, rng);
+    } else {
+      const points = fuelStops(d, o, dst, spec.legRangeNm, 0);
+      if (points) realistic = customOption(spec, points, 'realistic', passengers, now, rng);
+      else unavailable = `Too much open water between airports for its fuel range (${Math.round(spec.legRangeNm * 1.150779).toLocaleString()} mi with reserves). Switch fuel to Unlimited.`;
+    }
+    out.push({
+      key: spec.key,
+      name: spec.name,
+      summary: spec.summary,
+      seats: spec.seats,
+      realistic,
+      unavailable,
+      unlimited: spec.key === 'WALK' && realistic ? realistic : customOption(spec, [o, dst], 'unlimited', passengers, now, rng),
+      fuelApplies: spec.key !== 'WALK',
+    });
+  }
   return out;
 }
 
-/** "Generalized cost" an average traveller minimizes: money, time and hassle. */
+/** "Generalized cost" an average traveller minimizes: time and hassle. */
 function travellerCost(opt: ItineraryOption, mixed: boolean): number {
   const longLayovers = opt.layovers.reduce((sum, l) => sum + Math.max(0, l.minutes - 150), 0);
-  return opt.priceUsd / opt.passengers + 40 * (opt.durationMin / 60) + 110 * opt.stops + (longLayovers / 60) * 25 + (mixed ? 120 : 0);
+  return 40 * (opt.durationMin / 60) + 110 * opt.stops + (longLayovers / 60) * 25 + (mixed ? 120 : 0);
 }
 
-export function findOptions(from: Place, to: Place, opts: { advanced: boolean; now: number; rng: Rng; passengers?: number }): ItineraryOption[] {
+export function findOptions(from: Place, to: Place, opts: { advanced: boolean; now: number; rng: Rng; passengers?: number | null }): ItineraryOption[] {
   const d = simData();
   const { rng, now } = opts;
-  const passengers = Math.max(1, Math.floor(opts.passengers ?? 1));
+  // A chosen passenger count, or null for a realistic load on each plane.
+  const passengers = opts.passengers ? Math.max(1, Math.floor(opts.passengers)) : null;
   // Vague places ("Iowa"): simple mode samples a few airports at random (weighted by how busy
   // they are) so repeated searches vary; advanced mode compares the main ones.
   const sample = (airports: Airport[], n: number) => {
@@ -371,13 +370,30 @@ export function findOptions(from: Place, to: Place, opts: { advanced: boolean; n
           const key = path.map((a) => a.iata).join('-') + '/' + variant.codes.join(',');
           if (seen.has(key)) continue;
           seen.add(key);
-          const opt = airlineOption(d, path, variant, now, rng, passengers);
-          // A group can only book what's realistically available: ~30% of each flight's seats.
-          const fits = opt.legs.every((l) => {
-            const t = AIRCRAFT[l.aircraftType];
-            return seatMap(l.aircraftType, t?.kind ?? 'jet').capacity * 0.3 >= passengers;
-          });
-          if (fits) scored.push({ opt, cost: travellerCost(opt, variant.mixed) });
+          const opt = airlineOption(d, path, variant, now, rng);
+          let departures = 1;
+          if (passengers) {
+            // Exactly that many fly: fill the plane, and send the rest on later departures.
+            const perFlight = Math.min(...opt.legs.map((l) => seatCapacity(l.aircraftType, AIRCRAFT[l.aircraftType]?.kind ?? 'jet')));
+            departures = Math.ceil(passengers / perFlight);
+            opt.passengers = passengers;
+            opt.paxThisDeparture = Math.min(passengers, perFlight);
+            if (departures > 1) {
+              const extra: ItineraryOption[] = [];
+              let left = passengers - perFlight;
+              for (let k = 1; k < departures; k++) {
+                const dep = airlineOption(d, path, variant, now + k * GROUP_DEPARTURE_GAP_MS, rng, opt.legs.map((l) => l.aircraftType));
+                dep.passengers = passengers;
+                dep.paxThisDeparture = Math.min(left, perFlight);
+                left -= dep.paxThisDeparture;
+                extra.push(dep);
+              }
+              opt.extraDepartures = extra;
+              opt.aircraftCount = departures;
+              opt.note = `${passengers.toLocaleString()} passengers on ${departures} departures (up to ${perFlight.toLocaleString()} each), every ${GROUP_DEPARTURE_GAP_MS / 60_000} min`;
+            }
+          }
+          scored.push({ opt, cost: travellerCost(opt, variant.mixed) + (departures - 1) * 60 });
         }
       }
     }
@@ -386,29 +402,10 @@ export function findOptions(from: Place, to: Place, opts: { advanced: boolean; n
   const airline = scored.slice(0, 8).map((s) => s.opt);
   if (airline.length) {
     airline[0].tags.push('best');
-    airline.reduce((m, o) => (o.priceUsd < m.priceUsd ? o : m)).tags.push('cheapest');
     airline.reduce((m, o) => (o.durationMin < m.durationMin ? o : m)).tags.push('fastest');
   }
 
-  const o = origins[0];
-  const dst = dests.find((x) => x !== o);
-  const result = [...airline];
-  if (o && dst) {
-    const charters = charterOptions(d, o, dst, passengers, now, rng);
-    if (opts.advanced) {
-      // You said how many people are flying: the plane sized for your group is the best match,
-      // and airline tickets (seats on a shared flight) are the alternatives.
-      for (const a of airline) {
-        a.tags = a.tags.filter((t) => t !== 'best');
-        a.note = `Airline tickets: ${passengers} seat${passengers === 1 ? '' : 's'} on a scheduled flight shared with other travellers`;
-      }
-      charters[0].tags.push('best');
-      return [charters[0], ...charters.slice(1), ...airline];
-    }
-    if (!airline.length) charters[0].tags.push('best');
-    result.push(...charters);
-  }
-  return result;
+  return airline;
 }
 
 /** Random realistic trips: mostly real nonstop routes, some one-stop connections. */

@@ -2,7 +2,7 @@
 
 A flight simulator on a satellite map of the Earth with real day and night. Send realistic flights
 anywhere (or for an exact length of time), spawn random traffic, and click any plane for its path, telemetry,
-passengers and seat map. Everything keeps flying in real time, even while FlightX is closed.
+passenger counts. Everything keeps flying in real time, even while FlightX is closed.
 
 **No API keys, no accounts, no cost.**
 
@@ -26,7 +26,7 @@ Without VS Code: `npm run dev` does the same thing.
   Country and state borders and place names are drawn on top (no county lines).
 - **Plane colours:** grey on the ground, yellow = randomly spawned, green = sent by you.
 - **Click a plane** → photo of the type, airline, origin → destination with progress, takeoff and
-  landing times (your time zone; hover for the airport's), passengers + seat map, altitude, speeds,
+  landing times (your time zone; hover for the airport's), passengers aboard, altitude, speeds,
   position, aircraft and registration. **Follow** keeps it centred; **Focus** hides every other
   plane and fits the whole flight on screen; **Crash this plane** does what it says.
 - **Chill mode:** follow a plane and leave the mouse alone for 30 s — the UI fades away and only a
@@ -39,20 +39,30 @@ Without VS Code: `npm run dev` does the same thing.
   airline airports, weighted by how busy they are), `Iowa City to Miami`, `Wilton Iowa to Lafayette IN`,
   `DSM to MCO`, `Portland, Maine to Tokyo` or `O'Hare to Heathrow`. Press Enter and the best-match
   itinerary departs immediately.
-- **Timer flight:** pick a length of time (presets from 15 minutes to 12 hours, or type up to 72 hours)
+- **Timer flight:** type a length of time (hours and minutes, up to 72 hours)
   and FlightX sends a normal flight on a random real-world airline route that parks at its gate exactly
   that long from now. Long times connect through several flights; the shortest possible is about 12 minutes.
-- **Advanced mode:** set **Passengers flying**, then compare booking-site style options: nonstop / 1-stop / 2-stop routings on the
-  real airline network, aircraft, prices, with **Best match**, Cheapest and Fastest tagged, plus a
-  private-charter option that makes fuel stops when the trip is beyond the jet's range. Click
-  **Fly this** on any option.
-- **Group size drives the aircraft:** charters pick the smallest aircraft whose cabin fits the group
-  (Cessna 172 for one or two people … A380 for hundreds), add fuel stops from the aircraft's range, offer a
-  longer-range "fewer stops" alternative, and split huge groups across several planes. Airline options
-  only appear if the group realistically fits (~30% of a flight's seats); prices are for the group.
-- **Your own passengers:** on any option, **Add passengers** lets you name people (🎲 for a random one)
-  and click seats to place them. Empty seats fill with random passengers (charters carry exactly your
-  group size).
+- **Advanced mode:** compare booking-site style options: nonstop / 1-stop / 2-stop
+  routings on the real airline network and aircraft, with **Best match** and Fastest tagged.
+  Normally each plane carries a realistic load for its size. Switch on **Choose passengers** to send an exact
+  number (any amount, e.g. 700): the plane is filled and later departures of the same itinerary (every 45 minutes)
+  carry the rest. Click **Fly this** on any option.
+- **Custom planes** (Advanced mode, above the airline results), with real-world performance:
+  - **Cessna 172 Skyhawk** — 140 mph, 3 passengers plus the pilot, fuel stops every ~600 mi (can't cross oceans on realistic fuel).
+  - **Concorde** — 100 seats, Mach 2.04 over the ocean only (subsonic over land, like the real sonic-boom rules), fuel stops
+    every ~4,000 mi. London → New York takes about 3 h 20 m.
+  - **B-2 Spirit** — Mach 0.85, 2 seats (the crew), refuels from tankers in mid-air every ~6,300 mi instead of landing.
+  - **Lockheed Martin X-59 QueSST** — Mach 1.42 over land (its quiet "thump"), 1 seat (the pilot), fuel stops every ~860 mi
+    (NASA hasn't published its range; this is an estimate).
+  - **Lockheed SR-71 Blackbird** — Mach 3.2 at 80,000 ft, 2 seats (the crew). Realistic fuel: a tanker right after takeoff
+    (it took off light, like the real one), then every ~2,900 mi.
+  - **Hindenburg (LZ 129)** — airship, 76 mph a few hundred feet up, 72 passengers, ~8,000 mi range (call sign DEKKAR).
+  - **Walk** — 3.1 mph on foot, switching to a swimmer at 2 mph over water (the icon changes too). Never stops to rest;
+    fuel doesn't apply, so its fuel switch is greyed out.
+
+  Each plane's card has its own fuel switch: **Realistic** (stops / mid-air refuelling, the default) or **Unlimited** (nonstop);
+  times update to match. The Custom planes dropdown starts closed for every search.
+  Groups bigger than a plane's seats fly in several planes.
 - **Spawn random flights:** any number at a time, no limit. They fly random real
   routes and connections.
 
@@ -64,11 +74,10 @@ Without VS Code: `npm run dev` does the same thing.
   and arrivals (holding in the descent), so congestion adds time.
 - **Quick turns:** connections and fuel stops take at most 10 minutes at the gate, then the plane
   joins the taxi queue.
-- **Passengers & seat map:** each flight shows how many are aboard; **Seat map** opens the
-  aircraft's real cabin layout (both decks on a 747/A380). Click a seat for the passenger's name, age
-  and nationality, drawn from ~30 cultural name groups that match the route.
-- **Flight log:** every landed or crashed flight with its time, a Yours / Random badge, and a
-  **Passengers** button listing everyone it delivered (or who was aboard). Click an entry for details.
+- **Passengers:** each flight shows how many are aboard out of its seats — a realistic load, or exactly the number
+  you chose (custom planes: split across planes; a B-2 always carries its 2 crew, an X-59 its pilot).
+- **Flight log:** every landed or crashed flight with its time, a Yours / Random badge and how many passengers
+  it delivered. Click an entry for details.
 - **Real time, even while closed:** flights are stored as timestamped plans. Close FlightX for 6 hours
   and a plane on an 8-hour flight will have 2 hours left; anything that landed meanwhile is in the log
   with its real touchdown time, and **Things you missed** summarizes it on the next launch.
@@ -84,7 +93,7 @@ server/               Simulator service (Express on 127.0.0.1:8787)
     dataset/          Airports, routes, airlines (built by scripts/build-sim-data.mjs)
 shared/               Types + geo maths (great circles, dead reckoning)
 src/                  React UI: MapLibre map + deck.gl aircraft layers, panel, search,
-                      sidebar (src/components/sim), passengers (src/components/passengers)
+                      sidebar (src/components/sim)
 scripts/dev.mjs       What ▶ / `npm run dev` runs
 ```
 
@@ -99,6 +108,8 @@ type-checks everything.
 | Borders & place names    | OpenFreeMap vector tiles (© OpenStreetMap contributors)                        |
 | Night side & city lights | NASA GIBS VIIRS Black Marble                                                   |
 | Aircraft type photos     | Wikipedia                                                                      |
+| Land / sea (Concorde)    | Natural Earth 1:50m land (public domain), via `scripts/build-landmask.mjs`     |
+| Walk / swim map icons    | Material Design icons (Apache License 2.0)                                     |
 
 All are free for personal, non-commercial use (FlightX is a private app, so credits live here rather than on screen).
 

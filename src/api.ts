@@ -1,4 +1,4 @@
-import type { CrashResponse, CustomPassenger, LogFlightDetails, MissedSummary, PassengerManifest, PlanResponse, SeatMap, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../shared/sim';
+import type { CrashResponse, LogFlightDetails, MissedSummary, PlanResponse, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../shared/sim';
 import type { Bounds, FlightDetailResponse, FlightListResponse, SearchResponse, TrackResponse } from '../shared/types';
 
 /** Difference between the server's clock and ours, so positions use simulator time. */
@@ -41,14 +41,11 @@ export const api = {
   track: (id: string, signal?: AbortSignal) => get<TrackResponse>(`/api/flights/${encodeURIComponent(id)}/track`, signal),
   search: (q: string, signal?: AbortSignal) => get<SearchResponse>(`/api/search?${qs({ q })}`, signal),
   sim: {
-    plan: (query: string, advanced: boolean, passengers = 1) => post<PlanResponse>('/api/sim/plan', { query, advanced, passengers }),
+    /** `passengers`: send exactly this many, or null for a realistic load on each plane. */
+    plan: (query: string, advanced: boolean, passengers: number | null = null) => post<PlanResponse>('/api/sim/plan', { query, advanced, passengers }),
     send: (query: string) => post<{ plan: PlanResponse; trip: SimTripSummary | null }>('/api/sim/send', { query }),
-    book: (optionId: string, passengers: CustomPassenger[] = []) => post<{ trip: SimTripSummary }>('/api/sim/book', { optionId, passengers }),
-    passengers: (id: string) => get<PassengerManifest>(`/api/sim/flights/${encodeURIComponent(id)}/passengers`),
+    book: (optionId: string) => post<{ trip: SimTripSummary }>('/api/sim/book', { optionId }),
     logDetails: (entryId: string) => get<LogFlightDetails>(`/api/sim/log/${encodeURIComponent(entryId)}`),
-    logPassengers: (entryId: string) => get<PassengerManifest>(`/api/sim/log/${encodeURIComponent(entryId)}/passengers`),
-    seatMap: (type: string, charter: boolean) => get<SeatMap>(`/api/sim/seatmap/${encodeURIComponent(type)}?charter=${charter ? 1 : 0}`),
-    randomPerson: () => get<{ name: string; age: number }>('/api/sim/random-person'),
     timer: (minutes: number) => post<TimerResponse>('/api/sim/timer', { minutes }),
     spawn: (count: number) => post<{ created: number }>('/api/sim/spawn', { count }),
     status: (view: TripView = 'newest') => get<SimStatusResponse>(`/api/sim/status?view=${view}`),

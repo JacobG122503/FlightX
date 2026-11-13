@@ -1,12 +1,11 @@
 import { memo, useEffect, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api, serverNow } from '../../api';
-import type { CustomPassenger, ItineraryOption, PlanResponse, SimLogEntry, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
+import type { PlanResponse, SimLogEntry, SimStatusResponse, SimTripSummary, TimerResponse, TripView } from '../../../shared/sim';
 import type { FlightState } from '../../../shared/types';
 import { SearchBox } from '../SearchBox';
 import { ItineraryCard } from './ItineraryCard';
-import { PassengerEditor } from '../passengers/PassengerEditor';
-import { PassengerModal } from '../passengers/PassengerModal';
+import { CustomPlanes } from './CustomPlanes';
 import { LogFlightModal } from './LogFlightModal';
 import { TimerForm } from './TimerForm';
 import { airportTimeTip, fmtMinutes, fmtTimer, localStampTz } from '../../lib/time';
@@ -127,7 +126,7 @@ const TripRow = memo(
 );
 
 const LogRow = memo(
-  function LogRow({ entry: e, airports, onDetails, onPassengers }: { entry: SimLogEntry; airports: Airports; onDetails: (id: string) => void; onPassengers: (id: string) => void }) {
+  function LogRow({ entry: e, airports, onDetails }: { entry: SimLogEntry; airports: Airports; onDetails: (id: string) => void }) {
     return (
       <li
         className={`log__item${e.outcome === 'crashed' ? ' is-crashed' : ''}${e.random ? ' is-random' : ' is-mine'}`}
@@ -152,23 +151,14 @@ const LogRow = memo(
         </div>
         <div className="log__row log__row--sub">
           <span className="muted">
-            {e.paxCount ?? 0} passenger{e.paxCount === 1 ? '' : 's'} {e.outcome === 'landed' ? 'delivered' : 'aboard'}
+            {(e.paxCount ?? 0).toLocaleString()} passenger{e.paxCount === 1 ? '' : 's'} {e.outcome === 'landed' ? 'delivered' : 'aboard'}
           </span>
-          <button
-            className="link-btn"
-            onClick={(ev) => {
-              ev.stopPropagation();
-              onPassengers(e.id);
-            }}
-          >
-            Passengers
-          </button>
         </div>
       </li>
     );
   },
   // Log entries never change once written.
-  (a, b) => a.entry.id === b.entry.id && a.onDetails === b.onDetails && a.onPassengers === b.onPassengers,
+  (a, b) => a.entry.id === b.entry.id && a.onDetails === b.onDetails,
 );
 
 function Chevron({ open }: { open: boolean }) {
@@ -189,10 +179,10 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
   /** Typed as text so the box can be cleared while typing; empty or invalid means 1. */
   const [countText, setCountText] = useState('1');
   const count = Math.max(1, Math.floor(Number(countText.replace(/[^0-9]/g, '')) || 1));
-  const [groupSize, setGroupSize] = useState(1);
-  const [custom, setCustom] = useState<Record<string, CustomPassenger[]>>({});
-  const [editing, setEditing] = useState<ItineraryOption | null>(null);
-  const [manifestFor, setManifestFor] = useState<string | null>(null);
+  /** Advanced mode: send an exact number of passengers instead of a realistic load. */
+  const [choosePax, setChoosePax] = useState(false);
+  const [paxText, setPaxText] = useState('100');
+  const paxCount = Math.max(1, Math.floor(Number(paxText) || 1));
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [sections, setSections] = useState(loadSections);
@@ -253,8 +243,6 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
     });
     setQuery('');
     setPlan(null);
-    setGroupSize(1);
-    setCustom({});
     setAdding(false);
     onSelectFlight(trip.legs[0].flightId);
     onChanged();
@@ -267,10 +255,9 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
     setMessage(null);
     try {
       if (advanced) {
-        const res = await api.sim.plan(query, true, groupSize);
+        const res = await api.sim.plan(query, true, choosePax ? paxCount : null);
         setPlan(res);
-        setCustom({});
-        if (res.error) setMessage({ kind: 'error', text: res.error });
+            if (res.error) setMessage({ kind: 'error', text: res.error });
       } else {
         setPlan(null);
         const res = await api.sim.send(query);
@@ -287,7 +274,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
   const fly = async (optionId: string) => {
     setBusy(true);
     try {
-      const { trip } = await api.sim.book(optionId, custom[optionId] ?? []);
+      const { trip } = await api.sim.book(optionId);
       announce(trip);
     } catch (err) {
       setMessage({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
@@ -458,29 +445,41 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
                     </span>
                   </label>
                   {advanced && (
-                    <div className="group-size">
-                      <span>Passengers flying</span>
-                      <div className="stepper stepper--small">
-                        <button type="button" onClick={() => setGroupSize((n) => Math.max(1, n - 1))} aria-label="Fewer passengers">
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          min={1}
-                          max={5000}
-                          value={groupSize}
-                          onChange={(e) => setGroupSize(Math.max(1, Math.min(5000, Math.floor(Number(e.target.value) || 1))))}
-                        />
-                        <button type="button" onClick={() => setGroupSize((n) => Math.min(5000, n + 1))} aria-label="More passengers">
-                          +
-                        </button>
-                      </div>
+                    <div className="choose-pax">
+                      <label className="toggle">
+                        <input type="checkbox" checked={choosePax} onChange={(e) => setChoosePax(e.target.checked)} />
+                        <span className="toggle__track" />
+                        <span>
+                          Choose passengers <span className="muted">— otherwise each plane carries a realistic load</span>
+                        </span>
+                      </label>
+                      {choosePax && (
+                        <div className="group-size">
+                          <span>Passengers</span>
+                          <input
+                            className="choose-pax__input"
+                            type="text"
+                            inputMode="numeric"
+                            value={paxText}
+                            onChange={(e) => setPaxText(e.target.value.replace(/[^0-9]/g, ''))}
+                            onFocus={(e) => e.target.select()}
+                            aria-label="How many passengers"
+                          />
+                        </div>
+                      )}
                     </div>
+                  )}
+                  {advanced && plan && (
+                    <CustomPlanes
+                      choices={plan.custom}
+                      busy={busy}
+                      onFly={(o) => fly(o.id)}
+                    />
                   )}
                   {advanced && plan && plan.options.length > 0 && (
                     <div className="itins">
                       <div className="itins__head">
-                        {plan.fromLabel} → {plan.toLabel} · {plan.options.length} options
+                        Airline flights · {plan.fromLabel} → {plan.toLabel} · {plan.options.length} options
                       </div>
                       {plan.options.map((o) => (
                         <ItineraryCard
@@ -488,8 +487,6 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
                           option={o}
                           busy={busy}
                           onFly={() => fly(o.id)}
-                          customCount={custom[o.id]?.length ?? 0}
-                          onPassengers={() => setEditing(o)}
                         />
                       ))}
                     </div>
@@ -555,7 +552,7 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
             ) : (
               <ul className="log">
                 {log.map((e) => (
-                  <LogRow key={e.id} entry={e} airports={airports} onDetails={setDetailFor} onPassengers={setManifestFor} />
+                  <LogRow key={e.id} entry={e} airports={airports} onDetails={setDetailFor} />
                 ))}
                 {status && status.logTotal > log.length && (
                   <li className="muted more">
@@ -567,28 +564,9 @@ export function SimSidebar({ open, onToggle, status, onChanged, onSelectFlight, 
         </section>
       </div>
 
-      {editing && (
-        <PassengerEditor
-          option={editing}
-          initial={custom[editing.id] ?? []}
-          onClose={() => setEditing(null)}
-          onSave={(list) => {
-            setCustom((prev) => ({ ...prev, [editing.id]: list }));
-            setEditing(null);
-          }}
-        />
-      )}
       {detailFor && (
-        <LogFlightModal
-          entryId={detailFor}
-          onClose={() => setDetailFor(null)}
-          onPassengers={() => {
-            setManifestFor(detailFor);
-            setDetailFor(null);
-          }}
-        />
+        <LogFlightModal entryId={detailFor} onClose={() => setDetailFor(null)} />
       )}
-      {manifestFor && <PassengerModal load={() => api.sim.logPassengers(manifestFor)} onClose={() => setManifestFor(null)} />}
       {confirmClear &&
         createPortal(
           <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setConfirmClear(false)}>

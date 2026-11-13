@@ -60,7 +60,8 @@ export function createApp(staticDir: string | null) {
 
   sim.post('/plan', (req, res) => {
     const query = String(req.body?.query ?? '').slice(0, 200);
-    res.json(simSource.plan(query, Boolean(req.body?.advanced), Number(req.body?.passengers ?? 1)));
+    const count = Number(req.body?.passengers);
+    res.json(simSource.plan(query, Boolean(req.body?.advanced), Number.isFinite(count) && count > 0 ? count : null));
   });
   sim.post('/send', (req, res) => {
     try {
@@ -71,8 +72,7 @@ export function createApp(staticDir: string | null) {
   });
   sim.post('/book', (req, res) => {
     try {
-      const passengers = Array.isArray(req.body?.passengers) ? req.body.passengers : [];
-      res.json({ trip: simSource.book(String(req.body?.optionId ?? ''), passengers) });
+      res.json({ trip: simSource.book(String(req.body?.optionId ?? '')) });
     } catch (err) {
       fail(res, err);
     }
@@ -111,26 +111,10 @@ export function createApp(staticDir: string | null) {
     if (!result) res.status(404).json({ error: 'That flight isn’t in the air.' });
     else res.json(result);
   });
-  sim.get('/flights/:id/passengers', (req, res) => {
-    const m = simSource.passengers(String(req.params.id).toLowerCase());
-    if (!m) res.status(404).json({ error: 'That flight isn’t running any more.' });
-    else res.json(m);
-  });
   sim.get('/log/:id', (req, res) => {
     const details = simSource.logDetails(String(req.params.id));
     if (!details) res.status(404).json({ error: 'Log entry not found.' });
     else res.json(details);
-  });
-  sim.get('/log/:id/passengers', (req, res) => {
-    const m = simSource.logPassengers(String(req.params.id));
-    if (!m) res.status(404).json({ error: 'Log entry not found.' });
-    else res.json(m);
-  });
-  sim.get('/seatmap/:type', (req, res) => {
-    res.json(simSource.seatMapFor(String(req.params.type).toUpperCase().slice(0, 6), req.query.charter === '1'));
-  });
-  sim.get('/random-person', (_req, res) => {
-    res.json(simSource.randomPerson());
   });
   sim.post('/clear', (_req, res) => {
     res.json({ removed: simSource.clear() });

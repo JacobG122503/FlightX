@@ -2,17 +2,6 @@ import { useState, type FormEvent } from 'react';
 import type { TimerResponse } from '../../../shared/sim';
 import { api } from '../../api';
 
-const PRESETS: [string, number][] = [
-  ['15m', 15],
-  ['30m', 30],
-  ['1h', 60],
-  ['2h', 120],
-  ['3h', 180],
-  ['5h', 300],
-  ['8h', 480],
-  ['12h', 720],
-];
-
 interface Props {
   busy: boolean;
   setBusy: (busy: boolean) => void;
@@ -57,21 +46,6 @@ export function TimerForm({ busy, setBusy, onSent, onError }: Props) {
         <button className="btn btn--primary timer-form__go" type="submit" disabled={busy || total < 1}>
           Send
         </button>
-      </div>
-      <div className="presets presets--timer">
-        {PRESETS.map(([label, min]) => (
-          <button
-            key={label}
-            type="button"
-            className={total === min ? 'is-active' : ''}
-            onClick={() => {
-              setHours(Math.floor(min / 60));
-              setMinutes(min % 60);
-            }}
-          >
-            {label}
-          </button>
-        ))}
       </div>
       <p className="muted timer-form__hint">Sends a random flight that parks at its gate exactly this long from now.</p>
     </form>

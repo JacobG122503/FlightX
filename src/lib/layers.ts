@@ -2,7 +2,11 @@
 import { IconLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension, type PathStyleExtensionProps } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { aircraftIcon, hexRgba, PLANE_SIZE, planeColor, SIM_COLORS, zoomScale, type RGBA } from './icons';
+import { aircraftIcon, hexRgba, isPerson, PLANE_SIZE, planeColor, SIM_COLORS, zoomScale, type RGBA } from './icons';
+
+/** Planes point along their track; people (emoji) stay upright and face east or west. */
+const iconAngle = (d: FlightState) => (isPerson(d.kind) ? 0 : -(d.trackDeg ?? 0));
+const facesRight = (d: FlightState) => isPerson(d.kind) && (d.trackDeg ?? 0) < 180;
 import { extrapolate, greatCircle, unwrapLongitudes, type LatLon } from '../../shared/geo';
 import type { Airport, FlightRoute, FlightState, TrackPoint } from '../../shared/types';
 
@@ -115,9 +119,9 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
     new IconLayer<FlightState>({
       id: 'aircraft',
       data: others,
-      getIcon: (d) => aircraftIcon(d.kind, planeColor(d)),
+      getIcon: (d) => aircraftIcon(d.kind, planeColor(d), false, facesRight(d)),
       getPosition: (d) => toPos(extrapolate(d, now)),
-      getAngle: (d) => -(d.trackDeg ?? 0),
+      getAngle: iconAngle,
       getSize: PLANE_SIZE,
       sizeScale,
       sizeUnits: 'pixels',
@@ -202,9 +206,9 @@ export function buildFlightLayers(input: LayerInput): Layer[] {
       new IconLayer<FlightState>({
         id: 'aircraft-selected',
         data,
-        getIcon: (d) => aircraftIcon(d.kind, planeColor(d), true),
+        getIcon: (d) => aircraftIcon(d.kind, planeColor(d), true, facesRight(d)),
         getPosition: () => pos,
-        getAngle: (d) => -(d.trackDeg ?? 0),
+        getAngle: iconAngle,
         getSize: PLANE_SIZE * 1.35,
         sizeScale: Math.max(0.9, sizeScale),
         sizeUnits: 'pixels',

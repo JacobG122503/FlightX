@@ -59,7 +59,7 @@ export interface SimData {
 }
 
 // Works both from source (tsx) and from the Electron bundle (dist-electron/main.cjs).
-function dataDir(): string {
+export function dataDir(): string {
   const candidates = [
     path.resolve(process.cwd(), 'server/sources/sim/dataset'),
     path.resolve(__dirname_safe(), '../server/sources/sim/dataset'),

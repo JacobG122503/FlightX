@@ -3,15 +3,15 @@ import { createPortal } from 'react-dom';
 import { api } from '../../api';
 import type { LogFlightDetails } from '../../../shared/sim';
 import { airportTimeTip, fmtMinutes, localStampTz } from '../../lib/time';
+import { fmtMiFromNm } from '../../lib/format';
 
 interface Props {
   entryId: string;
   onClose: () => void;
-  onPassengers: () => void;
 }
 
 /** Details of a finished flight from the flight log. */
-export function LogFlightModal({ entryId, onClose, onPassengers }: Props) {
+export function LogFlightModal({ entryId, onClose }: Props) {
   const [details, setDetails] = useState<LogFlightDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,7 +87,7 @@ export function LogFlightModal({ entryId, onClose, onPassengers }: Props) {
               </div>
               <div className="row">
                 <dt>Distance</dt>
-                <dd>{details.distanceNm != null ? `${details.distanceNm.toLocaleString()} NM` : '—'}</dd>
+                <dd>{details.distanceNm != null ? fmtMiFromNm(details.distanceNm) : '—'}</dd>
               </div>
               <div className="row">
                 <dt>Passengers</dt>
@@ -102,9 +102,6 @@ export function LogFlightModal({ entryId, onClose, onPassengers }: Props) {
             </dl>
 
             <div className="pax-editor__actions">
-              <button className="btn" onClick={onPassengers}>
-                View passengers
-              </button>
               <button className="btn btn--primary" onClick={onClose}>
                 Close
               </button>

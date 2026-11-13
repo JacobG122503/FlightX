@@ -5,7 +5,7 @@
  * or other local boundaries.
  */
 import type { ExpressionSpecification, StyleSpecification } from 'maplibre-gl';
-import { nightBucket, nightTiles, registerNightProtocol } from './night';
+import { nightBucket, nightShadeTiles, nightTiles, registerNightProtocol } from './night';
 
 registerNightProtocol();
 
@@ -31,6 +31,13 @@ export const SATELLITE_STYLE: StyleSpecification = {
       tileSize: 256,
       maxzoom: 19,
     },
+    // Zoomed in: a plain dark night tint (smooth, so low-zoom tiles stretch fine).
+    nightshade: {
+      type: 'raster',
+      tiles: nightShadeTiles(nightBucket()),
+      tileSize: 256,
+      maxzoom: 7,
+    },
     // Real-time night side with city lights (see night.ts).
     night: {
       type: 'raster',
@@ -51,7 +58,20 @@ export const SATELLITE_STYLE: StyleSpecification = {
       // Slightly dimmed so the coloured aircraft stand out against the imagery.
       paint: { 'raster-brightness-max': 0.8, 'raster-saturation': -0.15, 'raster-contrast': 0.05 },
     },
-    { id: 'night', type: 'raster', source: 'night', paint: { 'raster-fade-duration': 0 } },
+    // As you zoom in, NASA's city lights (only published to zoom 8, so they blur into white blobs)
+    // fade out and the night tint fades in: the land stays visible but still looks like night.
+    {
+      id: 'nightshade',
+      type: 'raster',
+      source: 'nightshade',
+      paint: { 'raster-fade-duration': 0, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0, 6.5, 0.35, 8, 0.85, 9.5, 1] },
+    },
+    {
+      id: 'night',
+      type: 'raster',
+      source: 'night',
+      paint: { 'raster-fade-duration': 0, 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 5, 1, 6.5, 0.85, 8, 0.3, 9.5, 0] },
+    },
     // State / province borders (admin level 4) — counties (level 6+) are left out on purpose.
     {
       id: 'border-state',

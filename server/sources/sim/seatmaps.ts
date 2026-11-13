@@ -1,10 +1,9 @@
 /**
- * Cabin layouts per aircraft type (typical airline configurations). A layout
- * like "ABC-DEF" means seats A–C, an aisle, then D–F.
+ * Seat counts per aircraft type, from typical airline cabin layouts. A layout
+ * like "ABC-DEF" means seats A–C, an aisle, then D–F (6 abreast).
  */
-import type { SeatMap, SeatCabin } from '../../../shared/sim';
 
-type Code = SeatCabin['code'];
+type Code = 'F' | 'J' | 'W' | 'Y';
 type Section = [code: Code, firstRow: number, lastRow: number, layout: string, deck?: 'Upper'];
 
 const NB = (f: number, y: number, fLayout = 'AC-DF', yLayout = 'ABC-DEF'): Section[] => [
@@ -85,9 +84,15 @@ const MAPS: Record<string, Section[]> = {
   E55P: ALL_Y(4, 'A-B'),
   CL35: ALL_Y(5, 'A-B'),
   GLF6: ALL_Y(7, 'A-B'),
+  // Custom planes: Concorde's 100-seat all-premium cabin (2 + 2), and the B-2's two cockpit seats.
+  CONC: [['J', 1, 25, 'AB-CD']],
+  B2: [['F', 1, 1, 'A-B']],
+  X59: [['F', 1, 1, 'A']],
+  // SR-71: pilot and reconnaissance officer in tandem; Hindenburg: 72 passenger berths; Walk: just you.
+  SR71: [['F', 1, 2, 'A']],
+  ZEPP: ALL_Y(18, 'AB-CD'),
+  WALK: [['Y', 1, 1, 'A']],
 };
-
-const CABIN_NAME: Record<Code, string> = { F: 'First', J: 'Business', W: 'Premium Economy', Y: 'Economy' };
 
 /** Generic layout when a type isn't listed: sized from its typical role. */
 function generic(kind: string): Section[] {
@@ -96,37 +101,16 @@ function generic(kind: string): Section[] {
   return NB(3, 24);
 }
 
-const cache = new Map<string, SeatMap>();
+const cache = new Map<string, number>();
 
-export function seatMap(typeIcao: string, kind = 'jet', privateFlight = false): SeatMap {
-  const key = `${typeIcao}|${kind}|${privateFlight}`;
-  let m = cache.get(key);
-  if (m) return m;
-  const sections = MAPS[typeIcao] ?? generic(kind);
-  const decks = new Map<string, SeatCabin[]>();
-  let total = 0;
-  for (const [code, first, last, layout, deck = 'Main'] of sections) {
-    const rows = Array.from({ length: last - first + 1 }, (_, i) => first + i);
-    const name = privateFlight ? 'Cabin' : CABIN_NAME[code];
-    let list = decks.get(deck);
-    if (!list) decks.set(deck, (list = []));
-    list.push({ code, name, layout, rows });
-    total += rows.length * layout.replace(/-/g, '').length;
+/** How many seats an aircraft type has (passengers only; pilots and crew aren't counted, except on the B-2 / X-59). */
+export function seatCapacity(typeIcao: string, kind = 'jet'): number {
+  const key = `${typeIcao}|${kind}`;
+  let n = cache.get(key);
+  if (n == null) {
+    n = 0;
+    for (const [, first, last, layout] of MAPS[typeIcao] ?? generic(kind)) n += (last - first + 1) * layout.replace(/-/g, '').length;
+    cache.set(key, n);
   }
-  m = {
-    type: typeIcao,
-    decks: [...decks].map(([name, cabins]) => ({ name, cabins })).sort((a) => (a.name === 'Main' ? -1 : 1)),
-    capacity: total,
-  };
-  cache.set(key, m);
-  return m;
-}
-
-/** All seat labels in order, with their cabin code. */
-export function seatList(map: SeatMap): { seat: string; cabin: SeatCabin }[] {
-  const out: { seat: string; cabin: SeatCabin }[] = [];
-  for (const deck of map.decks)
-    for (const cabin of deck.cabins)
-      for (const row of cabin.rows) for (const letter of cabin.layout.replace(/-/g, '')) out.push({ seat: `${row}${letter}`, cabin });
-  return out;
+  return n;
 }

@@ -13,10 +13,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import type { Airline } from '../../../shared/types';
-import type { CustomPassenger, ItineraryOption, SimLogEntry } from '../../../shared/sim';
-import { mapFor, passengerCount, placeCustom, type PaxInput } from './passengers';
+import type { ItineraryOption, SimLogEntry } from '../../../shared/sim';
+import { passengerCount, type PaxInput } from './passengers';
 import { simData, type Airport } from './data';
 import { aircraftType, fallbackType, registration, squawk, type AircraftType } from './aircraft';
+import { customIdent, customPlane } from './custom-planes';
 import { buildProfile, evaluateAtGate, type Profile } from './profile';
 import { distNm } from './data';
 import { Rng, newId } from './random';
@@ -43,14 +44,14 @@ export interface StoredLeg {
   taxiOutMin: number;
   taxiInMin: number;
   seed: number;
-  /** Passengers you added (with seats on this aircraft). */
-  custom?: CustomPassenger[];
-  /** Charters: exact passenger count for this aircraft. */
+  /** Exact passenger count (you chose one, or a crew-only plane); otherwise a realistic load. */
   paxTarget?: number;
   /** Regional partner flying it (e.g. "SkyWest Airlines"). */
   operatedBy?: string;
   /** Minutes slowed in the descent waiting for a landing slot. */
   holdMin?: number;
+  /** Custom planes with fuel set to Unlimited (no mid-air refuelling). */
+  unlimitedFuel?: true;
 }
 
 export interface StoredTrip {
@@ -58,7 +59,8 @@ export interface StoredTrip {
   createdAt: number;
   random: boolean;
   query: string | null;
-  kind: 'airline' | 'charter';
+  /** 'charter' only appears in older saves (charters were replaced by Custom Planes). */
+  kind: 'airline' | 'custom' | 'charter';
   legs: StoredLeg[];
   /** Number of legs already finished (logged). */
   done: number;
@@ -237,7 +239,7 @@ export class SimStore {
       const from = d.byIata.get(leg.from)!;
       const to = d.byIata.get(leg.to)!;
       const type = aircraftType(leg.type) ?? fallbackType(distNm(from, to), new Rng(leg.seed));
-      const profile = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin, holdMin: leg.holdMin });
+      const profile = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin, holdMin: leg.holdMin, unlimitedFuel: leg.unlimitedFuel });
       l = { trip, index, leg, from, to, type, profile };
       this.live.set(leg, l);
     }
@@ -262,10 +264,8 @@ export class SimStore {
       seed: l.leg.seed,
       type: l.type.icao,
       kind: l.type.kind,
-      privateFlight: l.trip.kind === 'charter',
-      custom: l.leg.custom ?? [],
-      from: l.from,
-      to: l.to,
+      // Small private planes (the Cessna) fly emptier than airliners and Concorde.
+      privateFlight: l.trip.kind !== 'airline' && l.type.kind === 'light',
       target: l.leg.paxTarget,
     };
   }
@@ -274,33 +274,39 @@ export class SimStore {
    * Stores booked/random itineraries; `startAt` shifts the schedule so it departs then.
    * Charters for big groups become one trip per aircraft, with passengers split between them.
    */
-  add(options: ItineraryOption[], meta: { random: boolean; query: string | null; startAt?: number; passengers?: CustomPassenger[] }): StoredTrip[] {
-    const expanded: { opt: ItineraryOption; custom: CustomPassenger[]; target?: number }[] = [];
+  add(options: ItineraryOption[], meta: { random: boolean; query: string | null; startAt?: number }): StoredTrip[] {
+    const expanded: { opt: ItineraryOption; target?: number }[] = [];
     for (const opt of options) {
-      const custom = meta.passengers ?? [];
-      if (opt.kind === 'charter') {
-        const n = Math.max(opt.passengers, custom.length);
-        const per = Math.ceil(n / opt.aircraftCount);
+      if (opt.kind === 'custom') {
+        // One trip per plane. Crew-only planes (B-2, X-59) always carry their crew; otherwise the
+        // chosen count is split across the planes (or each plane gets a realistic load).
+        const spec = customPlane(opt.legs[0].aircraftType);
+        const crew = spec?.crewOnly ? spec.seats : null;
+        const n = opt.passengers;
+        const per = n ? Math.ceil(n / opt.aircraftCount) : 0;
         for (let i = 0; i < opt.aircraftCount; i++) {
-          expanded.push({ opt, custom: custom.slice(i * per, (i + 1) * per), target: Math.min(per, n - i * per) });
+          expanded.push({ opt, target: crew ?? (n ? Math.min(per, n - i * per) : undefined) });
         }
-      } else expanded.push({ opt, custom });
+      } else expanded.push({ opt, target: opt.paxThisDeparture });
     }
     return this.addExpanded(expanded, meta);
   }
 
-  private addExpanded(items: { opt: ItineraryOption; custom: CustomPassenger[]; target?: number }[], meta: { random: boolean; query: string | null; startAt?: number }): StoredTrip[] {
+  private addExpanded(items: { opt: ItineraryOption; target?: number }[], meta: { random: boolean; query: string | null; startAt?: number }): StoredTrip[] {
     const d = simData();
     const rng = new Rng();
     const created: StoredTrip[] = [];
-    for (const { opt, custom, target } of items) {
+    for (const { opt, target } of items) {
       const shift = meta.startAt != null ? meta.startAt - opt.departAt : 0;
       const tripId = newId(rng);
-      let privateId: { reg: string; hex: string } | null = null;
+      let privateId: { reg: string; hex: string; callsign?: string; flightNumber?: string } | null = null;
       const legs: StoredLeg[] = opt.legs.map((l) => {
-        const country = opt.kind === 'charter' ? 'United States' : (d.airlines.get(l.operator ?? l.airline.iata ?? l.airline.icao ?? '')?.country ?? null);
-        let ident: { reg: string; hex: string };
-        if (opt.kind === 'charter') ident = privateId ??= registration('United States', rng);
+        const country = opt.kind === 'custom' ? 'United States' : (d.airlines.get(l.operator ?? l.airline.iata ?? l.airline.icao ?? '')?.country ?? null);
+        let ident: { reg: string; hex: string; callsign?: string; flightNumber?: string };
+        if (opt.kind === 'custom') {
+          // Same airframe for every leg; Concorde and the B-2 get real tails / serials.
+          ident = privateId ??= customIdent(l.aircraftType, rng, (hex) => this.byFlightId.has(hex)) ?? registration('United States', rng);
+        }
         else {
           // Use a real airframe from the operator's fleet when one of that type is free.
           const real = (d.registry.get(l.operator ?? '') ?? []).filter(
@@ -314,11 +320,11 @@ export class SimStore {
             while (this.byFlightId.has(ident.hex)) ident = registration(country, rng);
           }
         }
-        const callsign = opt.kind === 'charter' ? ident.reg.replace('-', '') : l.callsign;
+        const callsign = opt.kind === 'custom' ? (ident.callsign ?? ident.reg.replace('-', '')) : l.callsign;
         return {
           id: ident.hex,
           callsign,
-          flightNumber: opt.kind === 'charter' ? ident.reg : l.flightNumber,
+          flightNumber: opt.kind === 'custom' ? (ident.flightNumber ?? ident.reg) : l.flightNumber,
           airline: l.airline,
           from: l.from.iata,
           to: l.to.iata,
@@ -330,11 +336,9 @@ export class SimStore {
           taxiOutMin: l.taxiOutMin,
           taxiInMin: l.taxiInMin,
           seed: rng.int(0, 2 ** 31),
-          ...(custom.length
-            ? { custom: placeCustom(custom, mapFor({ type: l.aircraftType, kind: aircraftType(l.aircraftType)?.kind ?? 'jet', privateFlight: opt.kind === 'charter' })) }
-            : {}),
           ...(target != null ? { paxTarget: target } : {}),
           ...(l.operatedBy ? { operatedBy: l.operatedBy } : {}),
+          ...(l.unlimitedFuel ? { unlimitedFuel: true as const } : {}),
         };
       });
       this.scheduleRunways(legs);
@@ -379,7 +383,7 @@ export class SimStore {
       const to = d.byIata.get(leg.to);
       if (!from || !to) continue;
       const type = aircraftType(leg.type) ?? fallbackType(distNm(from, to), new Rng(leg.seed));
-      const planned = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin }).arriveAt;
+      const planned = buildProfile({ from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiOutMin: leg.taxiOutMin, taxiInMin: leg.taxiInMin, unlimitedFuel: leg.unlimitedFuel }).arriveAt;
       if (prevArrive) {
         const turn = Math.min(MAX_TURN_MS, Math.max(0, leg.departAt - prevPlannedArrive));
         const shift = prevArrive + turn - leg.departAt;
@@ -387,7 +391,12 @@ export class SimStore {
       }
       // The next flight's planned departure is relative to this flight's planned arrival.
       prevPlannedArrive = planned;
-      const base = { from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiInMin: leg.taxiInMin };
+      const base = { from, to, type, cruiseFt: leg.cruiseFt, departAt: leg.departAt, taxiInMin: leg.taxiInMin, unlimitedFuel: leg.unlimitedFuel };
+      if (type.icao === 'WALK') {
+        // Walkers don't queue for runways.
+        prevArrive = buildProfile({ ...base, taxiOutMin: 0, taxiInMin: 0 }).arriveAt;
+        continue;
+      }
       const takeoff = book.bookTakeoff(from, leg.departAt + leg.taxiOutMin * 60_000);
       leg.taxiOutMin = (takeoff - leg.departAt) / 60_000;
       const unheld = buildProfile({ ...base, taxiOutMin: leg.taxiOutMin });
@@ -419,8 +428,7 @@ export class SimStore {
       legCount: l.trip.legs.length,
       paxSeed: l.leg.seed,
       paxCount: passengerCount(this.paxInput(l)),
-      ...(l.trip.kind === 'charter' ? { privateFlight: true } : {}),
-      ...(l.leg.custom?.length ? { custom: l.leg.custom } : {}),
+      ...(l.trip.kind !== 'airline' ? { privateFlight: true } : {}),
       ...(l.leg.paxTarget != null ? { paxTarget: l.leg.paxTarget } : {}),
     };
   }
